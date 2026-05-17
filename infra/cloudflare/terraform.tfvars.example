@@ -1,0 +1,15 @@
+account_id  = "your-cloudflare-account-id"
+zone_id     = "your-cloudflare-zone-id"
+zone_name   = "example.com"
+environment = "dev"
+
+r2_bucket_name  = "example-image-upload-originals"
+r2_location     = "enam"
+r2_storage_class = "Standard"
+r2_jurisdiction = "default"
+
+artwork_hostname = "artworks.example.com"
+
+# Enable only after the Variant Worker has been deployed.
+enable_worker_custom_domain = false
+worker_service_name         = "artnet-variant-worker-dev"

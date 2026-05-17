@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 720" width="680" height="720" role="img">
+  <title>Artnet image upload tool architecture</title>
+  <desc>Three callers feed the Upload Function which writes to GCS primary and R2 serving cache. Variant Worker serves end users from R2. Reconciliation function repairs drift daily.</desc>
+  <style>
+    .t  { font: 400 14px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #2c2c2a; }
+    .th { font: 500 14px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #2c2c2a; }
+    .ts { font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #5f5e5a; }
+
+    .header { font: 500 14px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #2c2c2a; }
+
+    .caller-fill   { fill: #EEEDFE; stroke: #534AB7; stroke-width: 0.5; }
+    .caller-title  { fill: #3C3489; }
+    .caller-sub    { fill: #534AB7; }
+
+    .uf-fill       { fill: #E1F5EE; stroke: #0F6E56; stroke-width: 0.5; }
+    .uf-title      { fill: #085041; }
+    .uf-sub        { fill: #0F6E56; }
+
+    .info-fill     { fill: #F1EFE8; stroke: #5F5E5A; stroke-width: 0.5; }
+    .info-title    { fill: #444441; }
+    .info-sub      { fill: #5F5E5A; }
+
+    .gcs-fill      { fill: #E6F1FB; stroke: #185FA5; stroke-width: 0.5; }
+    .gcs-title     { fill: #0C447C; }
+    .gcs-sub       { fill: #185FA5; }
+
+    .r2-fill       { fill: #FAEEDA; stroke: #854F0B; stroke-width: 0.5; }
+    .r2-title      { fill: #633806; }
+    .r2-sub        { fill: #854F0B; }
+
+    .arrow-line    { stroke: #5F5E5A; stroke-width: 1.5; fill: none; }
+    .arrow-grey    { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .arrow-dashed  { stroke: #888780; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+
+    .label-on-arrow { fill: #5F5E5A; font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; }
+    .caption        { fill: #5F5E5A; font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; }
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <text class="header" x="40" y="32">Write path</text>
+
+  <!-- Caller boxes -->
+  <rect class="caller-fill" x="40" y="56" width="180" height="56" rx="8"/>
+  <text class="th caller-title" x="130" y="78" text-anchor="middle" dominant-baseline="central">Auction-house user</text>
+  <text class="ts caller-sub" x="130" y="96" text-anchor="middle" dominant-baseline="central">Upload widget</text>
+
+  <rect class="caller-fill" x="250" y="56" width="180" height="56" rx="8"/>
+  <text class="th caller-title" x="340" y="78" text-anchor="middle" dominant-baseline="central">Vendor scraper</text>
+  <text class="ts caller-sub" x="340" y="96" text-anchor="middle" dominant-baseline="central">Existing pipeline</text>
+
+  <rect class="caller-fill" x="460" y="56" width="180" height="56" rx="8"/>
+  <text class="th caller-title" x="550" y="78" text-anchor="middle" dominant-baseline="central">Test harness</text>
+  <text class="ts caller-sub" x="550" y="96" text-anchor="middle" dominant-baseline="central">Vite + React demo</text>
+
+  <!-- Caller -> Upload Function arrows -->
+  <line x1="130" y1="112" x2="200" y2="158" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="340" y1="112" x2="340" y2="158" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="550" y1="112" x2="480" y2="158" class="arrow-line" marker-end="url(#arrow)"/>
+
+  <!-- Upload Function container -->
+  <rect class="uf-fill" x="40" y="160" width="600" height="160" rx="12"/>
+  <text class="th uf-title" x="340" y="184" text-anchor="middle" dominant-baseline="central">Upload Function</text>
+  <text class="ts uf-sub" x="340" y="202" text-anchor="middle" dominant-baseline="central">Cloud Run Functions, pure storage</text>
+
+  <rect class="uf-fill" x="60" y="220" width="180" height="80" rx="8"/>
+  <text class="th uf-title" x="150" y="244" text-anchor="middle" dominant-baseline="central">/uploads/presign</text>
+  <text class="ts uf-sub" x="150" y="262" text-anchor="middle" dominant-baseline="central">Signed PUT URL</text>
+  <text class="ts uf-sub" x="150" y="280" text-anchor="middle" dominant-baseline="central">/uploads/finalize</text>
+
+  <rect class="uf-fill" x="250" y="220" width="180" height="80" rx="8"/>
+  <text class="th uf-title" x="340" y="244" text-anchor="middle" dominant-baseline="central">/ingest/from-s3</text>
+  <text class="ts uf-sub" x="340" y="262" text-anchor="middle" dominant-baseline="central">Server-side fetch</text>
+  <text class="ts uf-sub" x="340" y="280" text-anchor="middle" dominant-baseline="central">From S3 source</text>
+
+  <rect class="info-fill" x="440" y="220" width="180" height="80" rx="8"/>
+  <text class="th info-title" x="530" y="244" text-anchor="middle" dominant-baseline="central">No database</text>
+  <text class="ts info-sub" x="530" y="262" text-anchor="middle" dominant-baseline="central">Returns metadata</text>
+  <text class="ts info-sub" x="530" y="280" text-anchor="middle" dominant-baseline="central">Caller writes SQL</text>
+
+  <!-- Upload Function -> Storage arrows -->
+  <line x1="200" y1="320" x2="160" y2="378" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="480" y1="320" x2="520" y2="378" class="arrow-line" marker-end="url(#arrow)"/>
+
+  <!-- GCS -->
+  <rect class="gcs-fill" x="60" y="380" width="220" height="60" rx="8"/>
+  <text class="th gcs-title" x="170" y="402" text-anchor="middle" dominant-baseline="central">GCS</text>
+  <text class="ts gcs-sub" x="170" y="422" text-anchor="middle" dominant-baseline="central">Primary, source of truth</text>
+
+  <!-- R2 -->
+  <rect class="r2-fill" x="400" y="380" width="220" height="60" rx="8"/>
+  <text class="th r2-title" x="510" y="402" text-anchor="middle" dominant-baseline="central">R2</text>
+  <text class="ts r2-sub" x="510" y="422" text-anchor="middle" dominant-baseline="central">Serving cache</text>
+
+  <!-- GCS -> R2 sync replicate arrow -->
+  <line x1="280" y1="410" x2="397" y2="410" class="arrow-grey" marker-end="url(#arrow)"/>
+  <text class="label-on-arrow" x="338" y="402" text-anchor="middle">Sync replicate</text>
+
+  <!-- Reconciliation -->
+  <rect class="info-fill" x="60" y="470" width="560" height="56" rx="8"/>
+  <text class="th info-title" x="340" y="490" text-anchor="middle" dominant-baseline="central">Reconciliation Function</text>
+  <text class="ts info-sub" x="340" y="510" text-anchor="middle" dominant-baseline="central">Daily GCS to R2 drift correction</text>
+
+  <line x1="170" y1="470" x2="170" y2="442" class="arrow-dashed" marker-end="url(#arrow)"/>
+  <line x1="510" y1="470" x2="510" y2="442" class="arrow-dashed" marker-end="url(#arrow)"/>
+
+  <!-- Read path -->
+  <text class="header" x="40" y="572">Read path</text>
+
+  <rect class="caller-fill" x="40" y="596" width="180" height="44" rx="8"/>
+  <text class="th caller-title" x="130" y="618" text-anchor="middle" dominant-baseline="central">End user</text>
+
+  <rect class="uf-fill" x="250" y="596" width="180" height="44" rx="8"/>
+  <text class="th uf-title" x="340" y="618" text-anchor="middle" dominant-baseline="central">Variant Worker</text>
+
+  <rect class="r2-fill" x="460" y="596" width="180" height="44" rx="8"/>
+  <text class="th r2-title" x="550" y="618" text-anchor="middle" dominant-baseline="central">R2</text>
+
+  <line x1="220" y1="618" x2="247" y2="618" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="430" y1="618" x2="457" y2="618" class="arrow-line" marker-end="url(#arrow)"/>
+
+  <text class="caption" x="340" y="660" text-anchor="middle">On-demand variants via Cloudflare Image Resizing, edge cached</text>
+</svg>

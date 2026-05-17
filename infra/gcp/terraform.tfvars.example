@@ -1,0 +1,20 @@
+project_id  = "your-gcp-project-id"
+region      = "us-east4"
+bucket_name = "your-globally-unique-artnet-image-bucket"
+
+# Keep the GCS bucket regional unless there is a specific cross-region requirement.
+bucket_location = "US-EAST4"
+
+# For production, replace * with the exact browser origins that upload directly to GCS.
+cors_allowed_origins = [
+  "http://localhost:5173",
+  "https://your-upload-ui.example.com",
+]
+
+public_base_url   = "https://artworks.artnet.com"
+cors_allow_origin = "https://your-upload-ui.example.com"
+
+# Cloudflare R2 values. The access key values themselves are stored in Secret Manager
+# after apply; do not put secret values in this file.
+r2_account_id = "your-cloudflare-account-id"
+r2_bucket     = "your-r2-replication-bucket"

@@ -1,0 +1,28 @@
+# Dev/lower-environment Cloudflare configuration for artnet-dev.com.
+#
+# Copy this file to env/dev.tfvars, then replace the account/zone placeholders:
+#
+#   cp infra/cloudflare/env/dev.tfvars.example infra/cloudflare/env/dev.tfvars
+#   terraform -chdir=infra/cloudflare plan -var-file=env/dev.tfvars
+#
+# Do not commit env/dev.tfvars. It contains account-specific IDs.
+
+account_id  = "REPLACE_WITH_CLOUDFLARE_ACCOUNT_ID"
+zone_id     = "REPLACE_WITH_ARTNET_DEV_ZONE_ID"
+zone_name   = "artnet-dev.com"
+environment = "dev"
+
+# Must match infra/gcp/env/dev.tfvars R2_BUCKET.
+r2_bucket_name = "artnet-dev-image-upload-originals"
+
+# Location hint for North America. Cloudflare only uses this on initial bucket creation.
+r2_location      = "enam"
+r2_storage_class = "Standard"
+r2_jurisdiction  = "default"
+
+artwork_hostname = "artworks.artnet-dev.com"
+
+# Deploy variant-worker first, then set this true to attach
+# artworks.artnet-dev.com to that Worker.
+enable_worker_custom_domain = false
+worker_service_name         = "artnet-variant-worker-dev"

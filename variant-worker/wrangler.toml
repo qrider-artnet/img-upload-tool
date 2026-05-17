@@ -1,0 +1,10 @@
+name = "artnet-variant-worker-dev"
+main = "src/index.ts"
+compatibility_date = "2026-05-15"
+
+[[r2_buckets]]
+binding = "R2_PRIMARY"
+bucket_name = "artnet-dev-image-upload-originals"
+
+[images]
+binding = "IMAGES"
