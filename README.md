@@ -12,7 +12,7 @@ Cloudflare R2, and serves originals plus generated WebP variants through a Cloud
 Implemented:
 
 - `upload-function/`: Cloud Run Function for direct uploads, finalization, R2 replication,
-  deletion, and deletion tombstones.
+  S3 ingest, Redis-backed upload sessions, deletion, and deletion tombstones.
 - `variant-worker/`: Cloudflare Worker that serves R2 originals and persists generated WebP
   variants on first request.
 - `infra/gcp/`: Terraform for the GCS bucket, service account, IAM, CORS, tombstone lifecycle,
@@ -23,12 +23,12 @@ Not implemented yet:
 
 - Upload Widget.
 - Test Harness.
-- S3 ingest endpoint.
 - Reconciliation Function.
 - Contract and end-to-end test suites.
 
-See [docs/spec.md](docs/spec.md) for the authoritative engineering spec and
-[docs/architecture.svg](docs/architecture.svg) for the system topology.
+See [docs/spec.md](docs/spec.md) for the authoritative engineering spec,
+[docs/architecture.svg](docs/architecture.svg) for the system topology, and
+[docs/read-path-architecture.svg](docs/read-path-architecture.svg) for the image-serving flow.
 
 ## Architecture
 
@@ -56,6 +56,7 @@ GCS is the system of record for original images. R2 is the serving mirror.
 docs/
   spec.md                         Engineering spec and API contracts
   architecture.svg                System diagram
+  read-path-architecture.svg      Image request/read-path diagram
   decisions/                      Accepted architectural decisions
 
 upload-function/                  Cloud Run Function, Node 22, TypeScript
@@ -191,9 +192,13 @@ Compatibility aliases map `medium` to `w640` and `large` to `w1600`.
 ## Documentation
 
 - [docs/spec.md](docs/spec.md): source of truth for behavior and contracts.
+- [docs/architecture.svg](docs/architecture.svg): system topology and write/read overview.
+- [docs/read-path-architecture.svg](docs/read-path-architecture.svg): image request read path.
 - [docs/decisions/0001-deletion-tombstones.md](docs/decisions/0001-deletion-tombstones.md):
   delete/reconciliation tombstone contract.
 - [docs/decisions/0002-persist-generated-webp-variants.md](docs/decisions/0002-persist-generated-webp-variants.md):
   persisted WebP variant decision.
+- [docs/decisions/0003-redis-upload-sessions.md](docs/decisions/0003-redis-upload-sessions.md):
+  shared Redis upload session storage.
 - [upload-function/README.md](upload-function/README.md): Upload Function setup and API details.
 - [variant-worker/README.md](variant-worker/README.md): Worker commands, bindings, and URL contract.

@@ -91,6 +91,37 @@ export const FinalizeResponseSchema = z
  */
 export type FinalizeResponse = z.infer<typeof FinalizeResponseSchema>;
 
+export const IngestFromS3RequestSchema = z
+  .object({
+    sourceUri: z.string().min(1).max(2048),
+    objectKey: z.string().min(1).max(512),
+    contentType: z.string().min(1).optional(),
+  })
+  .strict();
+
+/**
+ * Validated request body for server-side S3 ingest.
+ */
+export type IngestFromS3Request = z.infer<typeof IngestFromS3RequestSchema>;
+
+export const IngestFromS3ResponseSchema = z
+  .object({
+    objectKey: z.string().min(1),
+    publicUrl: z.url(),
+    size: z.number().int().nonnegative(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    contentType: AllowedContentTypeSchema,
+    sourceUri: z.string().min(1),
+    uploadedAt: z.iso.datetime(),
+    replicatedToR2: z.boolean(),
+  })
+  .strict();
+
+/**
+ * Validated response body for server-side S3 ingest.
+ */
+export type IngestFromS3Response = z.infer<typeof IngestFromS3ResponseSchema>;
+
 export const HealthResponseSchema = z.object({ status: z.literal('ok') }).strict();
 
 /**

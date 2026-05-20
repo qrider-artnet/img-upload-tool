@@ -30,6 +30,19 @@ export interface ObjectMetadata {
   readonly updatedAt: Date | undefined;
 }
 
+export interface WriteObjectInput {
+  readonly objectKey: ObjectKey;
+  readonly contentType: AllowedContentType;
+  readonly contentLength: number;
+  readonly bodyFactory: () => Promise<Readable>;
+}
+
+export interface WriteObjectResult {
+  readonly size: number;
+  readonly sha256: string;
+  readonly uploadedAt: Date;
+}
+
 /**
  * Storage operations needed by the stage 1 direct-upload flow.
  */
@@ -40,6 +53,7 @@ export interface UploadStorage {
   getObjectStream(objectKey: ObjectKey): Promise<Readable>;
   healthCheck(): Promise<void>;
   tombstoneExists(objectKey: ObjectKey): Promise<boolean>;
+  writeObject(input: WriteObjectInput): Promise<WriteObjectResult>;
   writeTombstone(objectKey: ObjectKey, tombstone: Tombstone): Promise<void>;
 }
 

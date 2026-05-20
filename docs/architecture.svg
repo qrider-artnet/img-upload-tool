@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 720" width="680" height="720" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 820" width="820" height="820" role="img">
   <title>Artnet image upload tool architecture</title>
-  <desc>Three callers feed the Upload Function which writes to GCS primary and R2 serving cache. Variant Worker serves end users from R2. Reconciliation function repairs drift daily.</desc>
+  <desc>Internal callers reach the Upload Function through an upstream trusted boundary. The function uses Redis for upload sessions, writes originals to GCS and R2, ingests from an allowlisted S3 source, writes deletion tombstones, and deletes persisted R2 WebP variants. The Variant Worker serves originals and generated WebP variants from R2.</desc>
   <style>
     .t  { font: 400 14px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #2c2c2a; }
     .th { font: 500 14px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #2c2c2a; }
@@ -29,9 +29,14 @@
     .r2-title      { fill: #633806; }
     .r2-sub        { fill: #854F0B; }
 
+    .redis-fill    { fill: #FBE7E7; stroke: #A61B1B; stroke-width: 0.5; }
+    .redis-title   { fill: #7F1111; }
+    .redis-sub     { fill: #A61B1B; }
+
     .arrow-line    { stroke: #5F5E5A; stroke-width: 1.5; fill: none; }
     .arrow-grey    { stroke: #888780; stroke-width: 1.5; fill: none; }
     .arrow-dashed  { stroke: #888780; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+    .arrow-delete  { stroke: #A61B1B; stroke-width: 1.5; fill: none; stroke-dasharray: 5 3; }
 
     .label-on-arrow { fill: #5F5E5A; font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; }
     .caption        { fill: #5F5E5A; font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; }
@@ -45,84 +50,115 @@
 
   <text class="header" x="40" y="32">Write path</text>
 
-  <!-- Caller boxes -->
-  <rect class="caller-fill" x="40" y="56" width="180" height="56" rx="8"/>
-  <text class="th caller-title" x="130" y="78" text-anchor="middle" dominant-baseline="central">Auction-house user</text>
-  <text class="ts caller-sub" x="130" y="96" text-anchor="middle" dominant-baseline="central">Upload widget</text>
+  <!-- Callers -->
+  <rect class="caller-fill" x="40" y="56" width="160" height="58" rx="8"/>
+  <text class="th caller-title" x="120" y="78" text-anchor="middle" dominant-baseline="central">Auction-house user</text>
+  <text class="ts caller-sub" x="120" y="96" text-anchor="middle" dominant-baseline="central">Upload widget</text>
 
-  <rect class="caller-fill" x="250" y="56" width="180" height="56" rx="8"/>
-  <text class="th caller-title" x="340" y="78" text-anchor="middle" dominant-baseline="central">Vendor scraper</text>
-  <text class="ts caller-sub" x="340" y="96" text-anchor="middle" dominant-baseline="central">Existing pipeline</text>
+  <rect class="caller-fill" x="230" y="56" width="160" height="58" rx="8"/>
+  <text class="th caller-title" x="310" y="78" text-anchor="middle" dominant-baseline="central">Vendor scraper</text>
+  <text class="ts caller-sub" x="310" y="96" text-anchor="middle" dominant-baseline="central">Existing pipeline</text>
 
-  <rect class="caller-fill" x="460" y="56" width="180" height="56" rx="8"/>
-  <text class="th caller-title" x="550" y="78" text-anchor="middle" dominant-baseline="central">Test harness</text>
-  <text class="ts caller-sub" x="550" y="96" text-anchor="middle" dominant-baseline="central">Vite + React demo</text>
+  <rect class="caller-fill" x="420" y="56" width="160" height="58" rx="8"/>
+  <text class="th caller-title" x="500" y="78" text-anchor="middle" dominant-baseline="central">Test harness</text>
+  <text class="ts caller-sub" x="500" y="96" text-anchor="middle" dominant-baseline="central">Reference app</text>
 
-  <!-- Caller -> Upload Function arrows -->
-  <line x1="130" y1="112" x2="200" y2="158" class="arrow-line" marker-end="url(#arrow)"/>
-  <line x1="340" y1="112" x2="340" y2="158" class="arrow-line" marker-end="url(#arrow)"/>
-  <line x1="550" y1="112" x2="480" y2="158" class="arrow-line" marker-end="url(#arrow)"/>
+  <rect class="info-fill" x="610" y="56" width="170" height="58" rx="8"/>
+  <text class="th info-title" x="695" y="78" text-anchor="middle" dominant-baseline="central">Source S3 / R2</text>
+  <text class="ts info-sub" x="695" y="96" text-anchor="middle" dominant-baseline="central">Allowlisted bucket</text>
 
-  <!-- Upload Function container -->
-  <rect class="uf-fill" x="40" y="160" width="600" height="160" rx="12"/>
-  <text class="th uf-title" x="340" y="184" text-anchor="middle" dominant-baseline="central">Upload Function</text>
-  <text class="ts uf-sub" x="340" y="202" text-anchor="middle" dominant-baseline="central">Cloud Run Functions, pure storage</text>
+  <!-- Trusted boundary -->
+  <rect class="info-fill" x="170" y="145" width="300" height="58" rx="8"/>
+  <text class="th info-title" x="320" y="167" text-anchor="middle" dominant-baseline="central">Internal caller boundary</text>
+  <text class="ts info-sub" x="320" y="185" text-anchor="middle" dominant-baseline="central">Gateway/auth injects trusted context</text>
 
-  <rect class="uf-fill" x="60" y="220" width="180" height="80" rx="8"/>
-  <text class="th uf-title" x="150" y="244" text-anchor="middle" dominant-baseline="central">/uploads/presign</text>
-  <text class="ts uf-sub" x="150" y="262" text-anchor="middle" dominant-baseline="central">Signed PUT URL</text>
-  <text class="ts uf-sub" x="150" y="280" text-anchor="middle" dominant-baseline="central">/uploads/finalize</text>
+  <line x1="120" y1="114" x2="225" y2="143" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="310" y1="114" x2="310" y2="143" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="500" y1="114" x2="415" y2="143" class="arrow-line" marker-end="url(#arrow)"/>
 
-  <rect class="uf-fill" x="250" y="220" width="180" height="80" rx="8"/>
-  <text class="th uf-title" x="340" y="244" text-anchor="middle" dominant-baseline="central">/ingest/from-s3</text>
-  <text class="ts uf-sub" x="340" y="262" text-anchor="middle" dominant-baseline="central">Server-side fetch</text>
-  <text class="ts uf-sub" x="340" y="280" text-anchor="middle" dominant-baseline="central">From S3 source</text>
+  <!-- Upload Function -->
+  <rect class="uf-fill" x="40" y="235" width="740" height="180" rx="12"/>
+  <text class="th uf-title" x="410" y="260" text-anchor="middle" dominant-baseline="central">Upload Function</text>
+  <text class="ts uf-sub" x="410" y="278" text-anchor="middle" dominant-baseline="central">Cloud Run Functions, pure storage, no application database</text>
 
-  <rect class="info-fill" x="440" y="220" width="180" height="80" rx="8"/>
-  <text class="th info-title" x="530" y="244" text-anchor="middle" dominant-baseline="central">No database</text>
-  <text class="ts info-sub" x="530" y="262" text-anchor="middle" dominant-baseline="central">Returns metadata</text>
-  <text class="ts info-sub" x="530" y="280" text-anchor="middle" dominant-baseline="central">Caller writes SQL</text>
+  <rect class="uf-fill" x="60" y="300" width="165" height="88" rx="8"/>
+  <text class="th uf-title" x="142" y="321" text-anchor="middle" dominant-baseline="central">Direct upload</text>
+  <text class="ts uf-sub" x="142" y="340" text-anchor="middle" dominant-baseline="central">/uploads/presign</text>
+  <text class="ts uf-sub" x="142" y="358" text-anchor="middle" dominant-baseline="central">GCS signed PUT</text>
+  <text class="ts uf-sub" x="142" y="376" text-anchor="middle" dominant-baseline="central">/uploads/finalize</text>
 
-  <!-- Upload Function -> Storage arrows -->
-  <line x1="200" y1="320" x2="160" y2="378" class="arrow-line" marker-end="url(#arrow)"/>
-  <line x1="480" y1="320" x2="520" y2="378" class="arrow-line" marker-end="url(#arrow)"/>
+  <rect class="uf-fill" x="245" y="300" width="165" height="88" rx="8"/>
+  <text class="th uf-title" x="327" y="321" text-anchor="middle" dominant-baseline="central">S3 ingest</text>
+  <text class="ts uf-sub" x="327" y="340" text-anchor="middle" dominant-baseline="central">/ingest/from-s3</text>
+  <text class="ts uf-sub" x="327" y="358" text-anchor="middle" dominant-baseline="central">HEAD + stream GET</text>
+  <text class="ts uf-sub" x="327" y="376" text-anchor="middle" dominant-baseline="central">SHA-256 computed</text>
 
-  <!-- GCS -->
-  <rect class="gcs-fill" x="60" y="380" width="220" height="60" rx="8"/>
-  <text class="th gcs-title" x="170" y="402" text-anchor="middle" dominant-baseline="central">GCS</text>
-  <text class="ts gcs-sub" x="170" y="422" text-anchor="middle" dominant-baseline="central">Primary, source of truth</text>
+  <rect class="uf-fill" x="430" y="300" width="165" height="88" rx="8"/>
+  <text class="th uf-title" x="512" y="321" text-anchor="middle" dominant-baseline="central">Delete object</text>
+  <text class="ts uf-sub" x="512" y="340" text-anchor="middle" dominant-baseline="central">Writes tombstone</text>
+  <text class="ts uf-sub" x="512" y="358" text-anchor="middle" dominant-baseline="central">Deletes R2 original</text>
+  <text class="ts uf-sub" x="512" y="376" text-anchor="middle" dominant-baseline="central">Deletes WebP variants</text>
 
-  <!-- R2 -->
-  <rect class="r2-fill" x="400" y="380" width="220" height="60" rx="8"/>
-  <text class="th r2-title" x="510" y="402" text-anchor="middle" dominant-baseline="central">R2</text>
-  <text class="ts r2-sub" x="510" y="422" text-anchor="middle" dominant-baseline="central">Serving cache</text>
+  <rect class="info-fill" x="615" y="300" width="145" height="88" rx="8"/>
+  <text class="th info-title" x="687" y="321" text-anchor="middle" dominant-baseline="central">Caller-owned SQL</text>
+  <text class="ts info-sub" x="687" y="340" text-anchor="middle" dominant-baseline="central">Function returns</text>
+  <text class="ts info-sub" x="687" y="358" text-anchor="middle" dominant-baseline="central">objectKey, URL,</text>
+  <text class="ts info-sub" x="687" y="376" text-anchor="middle" dominant-baseline="central">metadata</text>
 
-  <!-- GCS -> R2 sync replicate arrow -->
-  <line x1="280" y1="410" x2="397" y2="410" class="arrow-grey" marker-end="url(#arrow)"/>
-  <text class="label-on-arrow" x="338" y="402" text-anchor="middle">Sync replicate</text>
+  <line x1="320" y1="203" x2="320" y2="233" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="695" y1="114" x2="345" y2="298" class="arrow-grey" marker-end="url(#arrow)"/>
+  <text class="label-on-arrow" x="562" y="190" text-anchor="middle">sourceUri</text>
+
+  <!-- Redis sessions -->
+  <rect class="redis-fill" x="300" y="450" width="220" height="64" rx="8"/>
+  <text class="th redis-title" x="410" y="473" text-anchor="middle" dominant-baseline="central">Redis</text>
+  <text class="ts redis-sub" x="410" y="493" text-anchor="middle" dominant-baseline="central">Shared upload sessions + TTL</text>
+  <line x1="410" y1="415" x2="410" y2="448" class="arrow-grey" marker-end="url(#arrow)"/>
+
+  <!-- Storage -->
+  <rect class="gcs-fill" x="70" y="545" width="230" height="78" rx="8"/>
+  <text class="th gcs-title" x="185" y="568" text-anchor="middle" dominant-baseline="central">GCS</text>
+  <text class="ts gcs-sub" x="185" y="588" text-anchor="middle" dominant-baseline="central">Primary originals</text>
+  <text class="ts gcs-sub" x="185" y="606" text-anchor="middle" dominant-baseline="central">tombstones/&lt;objectKey&gt;.json</text>
+
+  <rect class="r2-fill" x="520" y="545" width="230" height="78" rx="8"/>
+  <text class="th r2-title" x="635" y="568" text-anchor="middle" dominant-baseline="central">R2</text>
+  <text class="ts r2-sub" x="635" y="588" text-anchor="middle" dominant-baseline="central">Serving mirror</text>
+  <text class="ts r2-sub" x="635" y="606" text-anchor="middle" dominant-baseline="central">originals + persisted WebP</text>
+
+  <line x1="185" y1="415" x2="185" y2="543" class="arrow-line" marker-end="url(#arrow)"/>
+  <text class="label-on-arrow" x="140" y="483" text-anchor="middle">write original</text>
+
+  <line x1="635" y1="415" x2="635" y2="543" class="arrow-line" marker-end="url(#arrow)"/>
+  <text class="label-on-arrow" x="682" y="483" text-anchor="middle">replicate</text>
+
+  <line x1="300" y1="584" x2="517" y2="584" class="arrow-grey" marker-end="url(#arrow)"/>
+  <text class="label-on-arrow" x="410" y="575" text-anchor="middle">GCS to R2 repair</text>
+
+  <path d="M512 389C512 455 635 460 635 542" class="arrow-delete" marker-end="url(#arrow)"/>
+  <text class="label-on-arrow" x="592" y="440" text-anchor="middle">delete variants</text>
 
   <!-- Reconciliation -->
-  <rect class="info-fill" x="60" y="470" width="560" height="56" rx="8"/>
-  <text class="th info-title" x="340" y="490" text-anchor="middle" dominant-baseline="central">Reconciliation Function</text>
-  <text class="ts info-sub" x="340" y="510" text-anchor="middle" dominant-baseline="central">Daily GCS to R2 drift correction</text>
-
-  <line x1="170" y1="470" x2="170" y2="442" class="arrow-dashed" marker-end="url(#arrow)"/>
-  <line x1="510" y1="470" x2="510" y2="442" class="arrow-dashed" marker-end="url(#arrow)"/>
+  <rect class="info-fill" x="210" y="650" width="400" height="58" rx="8"/>
+  <text class="th info-title" x="410" y="672" text-anchor="middle" dominant-baseline="central">Reconciliation Function</text>
+  <text class="ts info-sub" x="410" y="690" text-anchor="middle" dominant-baseline="central">Daily drift repair, skips objects with tombstones</text>
+  <line x1="280" y1="650" x2="220" y2="624" class="arrow-dashed" marker-end="url(#arrow)"/>
+  <line x1="540" y1="650" x2="615" y2="624" class="arrow-dashed" marker-end="url(#arrow)"/>
 
   <!-- Read path -->
-  <text class="header" x="40" y="572">Read path</text>
+  <text class="header" x="40" y="750">Read path</text>
 
-  <rect class="caller-fill" x="40" y="596" width="180" height="44" rx="8"/>
-  <text class="th caller-title" x="130" y="618" text-anchor="middle" dominant-baseline="central">End user</text>
+  <rect class="caller-fill" x="40" y="770" width="160" height="36" rx="8"/>
+  <text class="th caller-title" x="120" y="788" text-anchor="middle" dominant-baseline="central">End user</text>
 
-  <rect class="uf-fill" x="250" y="596" width="180" height="44" rx="8"/>
-  <text class="th uf-title" x="340" y="618" text-anchor="middle" dominant-baseline="central">Variant Worker</text>
+  <rect class="uf-fill" x="250" y="770" width="180" height="36" rx="8"/>
+  <text class="th uf-title" x="340" y="788" text-anchor="middle" dominant-baseline="central">Variant Worker</text>
 
-  <rect class="r2-fill" x="460" y="596" width="180" height="44" rx="8"/>
-  <text class="th r2-title" x="550" y="618" text-anchor="middle" dominant-baseline="central">R2</text>
+  <rect class="r2-fill" x="520" y="770" width="230" height="36" rx="8"/>
+  <text class="th r2-title" x="635" y="788" text-anchor="middle" dominant-baseline="central">R2 originals + WebP variants</text>
 
-  <line x1="220" y1="618" x2="247" y2="618" class="arrow-line" marker-end="url(#arrow)"/>
-  <line x1="430" y1="618" x2="457" y2="618" class="arrow-line" marker-end="url(#arrow)"/>
-
-  <text class="caption" x="340" y="660" text-anchor="middle">On-demand variants via Cloudflare Image Resizing, edge cached</text>
+  <line x1="200" y1="788" x2="247" y2="788" class="arrow-line" marker-end="url(#arrow)"/>
+  <line x1="430" y1="788" x2="517" y2="788" class="arrow-line" marker-end="url(#arrow)"/>
+  <path d="M635 770C635 735 340 735 340 768" class="arrow-grey" marker-end="url(#arrow)"/>
+  <text class="caption" x="410" y="730" text-anchor="middle">Worker generates fixed WebP variants on miss and writes them back to R2</text>
 </svg>

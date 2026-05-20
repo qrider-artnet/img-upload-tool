@@ -1,10 +1,8 @@
 # S3-Compatible Source Ingest
 
-This is the future single-call server-side flow for cases where the source image already lives in an S3-compatible bucket, such as vendor scraper output or a mock R2 bucket.
+This is the single-call server-side flow for cases where the source image already lives in an S3-compatible bucket, such as vendor scraper output or a mock R2 bucket.
 
-This endpoint is not implemented in stage 1.
-
-Planned request:
+Request:
 
 ```typescript
 interface S3IngestRequest {

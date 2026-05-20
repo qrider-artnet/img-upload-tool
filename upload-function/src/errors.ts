@@ -8,7 +8,7 @@ export type ErrorDetails = Record<string, unknown>;
 /**
  * HTTP statuses used by typed Upload Function errors.
  */
-export type ErrorHttpStatus = 400 | 401 | 403 | 404 | 409 | 500 | 503;
+export type ErrorHttpStatus = 400 | 401 | 403 | 404 | 409 | 500 | 502 | 503;
 
 /**
  * Typed error used for all expected Upload Function failures.

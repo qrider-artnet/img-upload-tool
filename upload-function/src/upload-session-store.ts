@@ -36,6 +36,7 @@ export interface UploadSessionStore {
   create(input: CreateUploadSessionInput): Promise<UploadSession>;
   delete(uploadId: UploadId): Promise<void>;
   get(uploadId: UploadId, now: Date): Promise<UploadSession | undefined>;
+  healthCheck(): Promise<void>;
 }
 
 export const DEFAULT_MAX_IN_MEMORY_SESSIONS = 10_000;
@@ -98,6 +99,10 @@ export class InMemoryUploadSessionStore implements UploadSessionStore {
     return Promise.resolve(session);
   }
 
+  public healthCheck(): Promise<void> {
+    return Promise.resolve();
+  }
+
   #pruneExpired(now: Date): void {
     const cutoff = now.getTime();
     for (const [uploadId, session] of this.#sessions) {
@@ -124,4 +129,4 @@ export const parseUploadId = (value: string | undefined): UploadId => {
   });
 };
 
-const createUploadId = (): UploadId => ulid() as UploadId;
+export const createUploadId = (): UploadId => ulid() as UploadId;

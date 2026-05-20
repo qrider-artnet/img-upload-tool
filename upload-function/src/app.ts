@@ -22,10 +22,13 @@ import {
   ErrorResponseSchema,
   FinalizeResponseSchema,
   HealthResponseSchema,
+  IngestFromS3RequestSchema,
+  IngestFromS3ResponseSchema,
   PresignRequestSchema,
   PresignResponseSchema,
   type PresignRequest,
 } from './schemas.js';
+import type { SourceStorage } from './storage/s3-source-storage.js';
 import type { ReplicationStorage } from './storage/replication-storage.js';
 import type { UploadStorage } from './storage/upload-storage.js';
 import type { AllowedContentType, ObjectKey } from './types.js';
@@ -54,6 +57,7 @@ export interface CreateUploadFunctionAppInput {
   readonly signedUrlTtlSeconds: number;
   readonly storage: UploadStorage;
   readonly replication: ReplicationStorage;
+  readonly sourceStorage: SourceStorage;
   readonly uploadSessionStore: UploadSessionStore;
 }
 
@@ -104,7 +108,12 @@ export const createUploadFunctionApp = (
   });
 
   app.get('/v1/health', async (c) => {
-    await Promise.all([services.storage.healthCheck(), services.replication.healthCheck()]);
+    await Promise.all([
+      services.storage.healthCheck(),
+      services.replication.healthCheck(),
+      services.sourceStorage.healthCheck(),
+      services.uploadSessionStore.healthCheck(),
+    ]);
     const response = HealthResponseSchema.parse({ status: 'ok' });
     return c.json(response);
   });
@@ -262,6 +271,65 @@ export const createUploadFunctionApp = (
       requestId,
       objectKey: session.objectKey,
       size: metadata.size,
+    });
+
+    return c.json(response);
+  });
+
+  app.post('/v1/ingest/from-s3', async (c) => {
+    const requestId = c.get('requestId');
+    const log = createLogger(requestId);
+    const body = await readJsonBody(() => c.req.json());
+    const request = parseWithSchema(IngestFromS3RequestSchema, body);
+    const objectKey = parseObjectKey(request.objectKey);
+    const sourceMetadata = await services.sourceStorage.getObjectMetadata(request.sourceUri);
+    validateContentLength(sourceMetadata.contentLength);
+    const contentType = parseAllowedContentType(
+      request.contentType ?? sourceMetadata.contentType ?? '',
+    );
+
+    log.info({
+      eventCode: 'uploads.ingest_s3.requested',
+      requestId,
+      objectKey,
+      sourceUri: request.sourceUri,
+    });
+
+    const writeResult = await services.storage.writeObject({
+      objectKey,
+      contentType,
+      contentLength: sourceMetadata.contentLength,
+      bodyFactory: () => services.sourceStorage.getObjectStream(request.sourceUri),
+    });
+    const cacheVersion = ulid();
+    const replicatedToR2 = await replicateToR2({
+      replication: services.replication,
+      storage: services.storage,
+      cacheVersion,
+      objectKey,
+      contentType,
+      contentLength: writeResult.size,
+      log,
+      requestId,
+    });
+
+    const response = IngestFromS3ResponseSchema.parse({
+      objectKey,
+      publicUrl: buildVersionedPublicUrl(services.publicBaseUrl, cacheVersion, objectKey),
+      size: writeResult.size,
+      sha256: writeResult.sha256,
+      contentType,
+      sourceUri: request.sourceUri,
+      uploadedAt: writeResult.uploadedAt.toISOString(),
+      replicatedToR2,
+    });
+
+    log.info({
+      eventCode: 'uploads.ingest_s3.succeeded',
+      requestId,
+      objectKey,
+      sourceUri: request.sourceUri,
+      size: writeResult.size,
     });
 
     return c.json(response);

@@ -13,15 +13,17 @@ Implemented:
 - `POST /v1/uploads/:uploadId/finalize`
 - `DELETE /v1/uploads/:uploadId` (cancel an in-flight upload session)
 - `DELETE /v1/objects/<objectKey>` (delete a finalized image; spec §2.3.6)
+- `POST /v1/ingest/from-s3`
 - R2 replication on finalize (spec §2.9)
+- S3 ingest from an allowlisted S3-compatible source bucket (spec §2.3.4)
 - deletion tombstones (spec §2.12)
 - browser CORS/preflight handling
-- in-memory upload sessions
+- Redis-backed upload sessions, with in-memory fallback when `REDIS_URL` is absent
 - runnable browser and server examples
 
 Not implemented yet:
 
-- `POST /v1/ingest/from-s3`.
+- Reconciliation Function.
 
 Those deferred items are separate stages in `docs/spec.md` section 10.
 
@@ -95,20 +97,24 @@ It records:
 
 During finalize, the function looks up the session, checks that the GCS object exists, verifies its size, returns metadata, and deletes the session.
 
-The current implementation stores sessions in memory. This is simple and matches the v1 default in the spec, but sessions are lost if the process restarts.
+The production implementation stores sessions in Redis when `REDIS_URL` is configured. Each session is written under `REDIS_KEY_PREFIX + uploadId` with a TTL matching the signed URL expiry. This lets presign and finalize land on different Cloud Run instances.
 
-The store also enforces a soft capacity ceiling (default `10_000` sessions). When the ceiling is reached, expired sessions are swept first; if the store is still full, new presigns are rejected with `503 too_many_sessions`.
+If `REDIS_URL` is absent, the function falls back to the in-memory store for local development. In-memory sessions are lost if the process restarts and are not safe for horizontally scaled deployments.
+
+The in-memory fallback also enforces a soft capacity ceiling (default `10_000` sessions). When the ceiling is reached, expired sessions are swept first; if the store is still full, new presigns are rejected with `503 too_many_sessions`.
 
 ## Cloud Run Deployment
 
-The in-memory session store is correct only on a single instance. Presigns and finalizes for the same `uploadId` must hit the same process, so Cloud Run must be deployed with:
+Production Cloud Run deployments should configure `REDIS_URL` so session state is shared across instances. With Redis enabled, Cloud Run can scale horizontally and the spec's `--max-instances=10` setting is compatible with direct uploads.
+
+Only local/dev deployments that intentionally omit Redis should cap the function to one instance:
 
 ```text
 --min-instances=1
 --max-instances=1
 ```
 
-This matches spec §2.3.1's "in-process memory" choice for v1. If traffic ever requires horizontal scale, replace `InMemoryUploadSessionStore` with a shared backing store (Firestore or Memorystore) and lift the instance cap — that is a separate change and requires an ADR.
+The function does not create or manage the Redis cluster. It expects the deployment environment to provide a reachable Redis URL, including TLS/auth details if required.
 
 ## Gateway Boundary
 
@@ -162,6 +168,17 @@ GCS_BUCKET=<your-dev-gcs-bucket>
 PUBLIC_BASE_URL=https://artworks.artnet.com
 SIGNED_URL_TTL_SECONDS=900
 CORS_ALLOW_ORIGIN=*
+R2_ACCOUNT_ID=<your-r2-account-id>
+R2_BUCKET=<your-r2-bucket>
+R2_ACCESS_KEY_ID=<your-r2-access-key-id>
+R2_SECRET_ACCESS_KEY=<your-r2-secret-access-key>
+S3_SOURCE_ENDPOINT=https://<account-or-provider-endpoint>
+S3_SOURCE_REGION=auto
+S3_SOURCE_ACCESS_KEY_ID=<your-source-access-key-id>
+S3_SOURCE_SECRET_ACCESS_KEY=<your-source-secret-access-key>
+S3_SOURCE_ALLOWED_BUCKETS=artnet-vendor-feed
+REDIS_URL=redis://<host>:6379
+REDIS_KEY_PREFIX=upload-session:
 ```
 
 The direct-upload examples require a real dev GCS bucket because they upload to the signed GCS URL returned by `presign`.
@@ -170,17 +187,24 @@ The direct-upload examples require a real dev GCS bucket because they upload to 
 
 ## Environment Variables
 
-| Variable                 | Required | Description                                                                                |
-| ------------------------ | -------- | ------------------------------------------------------------------------------------------ |
-| `GCS_BUCKET`             | yes      | Primary GCS bucket used for signed upload URLs and object metadata checks.                 |
-| `PUBLIC_BASE_URL`        | yes      | Public image base URL used in finalize responses.                                          |
-| `SIGNED_URL_TTL_SECONDS` | no       | Signed URL TTL. Defaults to `900`.                                                         |
-| `CORS_ALLOW_ORIGIN`      | no       | Browser CORS allow-origin value. Defaults to `*` for local development.                    |
-| `R2_ACCOUNT_ID`          | yes      | Cloudflare account ID for the R2 replication target (spec §2.9).                           |
-| `R2_BUCKET`              | yes      | R2 bucket used as the replication mirror of GCS.                                           |
-| `R2_ACCESS_KEY_ID`       | yes      | R2 access key used by the S3-compatible client. Provided via Secret Manager in production. |
-| `R2_SECRET_ACCESS_KEY`   | yes      | R2 secret access key. Provided via Secret Manager in production.                           |
-| `R2_REPLICATION_RETRIES` | no       | Additional retry attempts after the first PUT/DELETE failure. Defaults to `3`.             |
+| Variable                      | Required | Description                                                                                |
+| ----------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `GCS_BUCKET`                  | yes      | Primary GCS bucket used for signed upload URLs and object metadata checks.                 |
+| `PUBLIC_BASE_URL`             | yes      | Public image base URL used in finalize responses.                                          |
+| `SIGNED_URL_TTL_SECONDS`      | no       | Signed URL TTL. Defaults to `900`.                                                         |
+| `CORS_ALLOW_ORIGIN`           | no       | Browser CORS allow-origin value. Defaults to `*` for local development.                    |
+| `R2_ACCOUNT_ID`               | yes      | Cloudflare account ID for the R2 replication target (spec §2.9).                           |
+| `R2_BUCKET`                   | yes      | R2 bucket used as the replication mirror of GCS.                                           |
+| `R2_ACCESS_KEY_ID`            | yes      | R2 access key used by the S3-compatible client. Provided via Secret Manager in production. |
+| `R2_SECRET_ACCESS_KEY`        | yes      | R2 secret access key. Provided via Secret Manager in production.                           |
+| `R2_REPLICATION_RETRIES`      | no       | Additional retry attempts after the first PUT/DELETE failure. Defaults to `3`.             |
+| `REDIS_URL`                   | no       | Redis connection URL for shared upload sessions. Required for horizontal scaling.          |
+| `REDIS_KEY_PREFIX`            | no       | Redis key prefix for upload sessions. Defaults to `upload-session:`.                       |
+| `S3_SOURCE_ENDPOINT`          | yes      | S3-compatible endpoint for source ingest (R2 mock or AWS S3).                              |
+| `S3_SOURCE_REGION`            | yes      | Source S3 region. Use `auto` for R2.                                                       |
+| `S3_SOURCE_ACCESS_KEY_ID`     | yes      | Access key for reading the source bucket. Provided via Secret Manager in production.       |
+| `S3_SOURCE_SECRET_ACCESS_KEY` | yes      | Secret key for reading the source bucket. Provided via Secret Manager in production.       |
+| `S3_SOURCE_ALLOWED_BUCKETS`   | yes      | Comma-separated allowlist of source bucket names accepted by ingest.                       |
 
 ## Commands
 
@@ -309,23 +333,21 @@ It sets `Content-Length` explicitly when uploading to the signed GCS URL.
 
 See [examples/curl-direct-upload.md](./examples/curl-direct-upload.md).
 
-### Future S3 Ingest
+### S3 Ingest
 
 See [examples/s3-ingest.md](./examples/s3-ingest.md).
 
-This is the future single-call server-side flow for cases where a source image already lives in an S3-compatible bucket:
+This is the single-call server-side flow for cases where a source image already lives in an S3-compatible bucket:
 
 ```text
 POST /v1/ingest/from-s3
 ```
 
-That endpoint is not implemented in this stage.
-
 ## API Summary
 
 ### `GET /v1/health`
 
-Checks that the configured GCS bucket is reachable.
+Checks that the configured GCS bucket, R2 bucket, S3 source bucket allowlist, and upload session store are reachable.
 
 Response:
 
@@ -517,6 +539,4 @@ After the GCS object is verified during finalize, the function streams it to R2 
 ## Spec Differences / Open Items
 
 - Authentication is handled upstream by an API Gateway. The function trusts only gateway-injected context headers, matching spec section 2.5.
-- Upload session storage is currently in-memory. Redis/Memorystore remains a future option.
 - VPC attachment is a deployment TBD.
-- S3 ingest is intentionally deferred to a later implementation stage.

@@ -47,6 +47,19 @@ r2_bucket     = "artnet-dev-image-upload-originals"
 r2_access_key_id_secret_id     = "artnet-dev-r2-access-key-id"
 r2_secret_access_key_secret_id = "artnet-dev-r2-secret-access-key"
 
+# Mock vendor S3/R2 source used by POST /v1/ingest/from-s3.
+s3_source_endpoint        = "https://REPLACE_WITH_CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+s3_source_region          = "auto"
+s3_source_allowed_buckets = [
+  "artnet-mock-vendor-feed",
+]
+
+s3_source_access_key_id_secret_id     = "artnet-dev-s3-source-access-key-id"
+s3_source_secret_access_key_secret_id = "artnet-dev-s3-source-secret-access-key"
+
+redis_url_secret_id = "artnet-dev-redis-url"
+redis_key_prefix    = "upload-session:"
+
 labels = {
   app         = "artnet-image-upload"
   managed_by  = "terraform"
