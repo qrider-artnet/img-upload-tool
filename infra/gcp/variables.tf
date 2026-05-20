@@ -108,6 +108,46 @@ variable "r2_secret_access_key_secret_id" {
   default     = "r2-secret-access-key"
 }
 
+variable "s3_source_endpoint" {
+  description = "S3-compatible source endpoint used by POST /v1/ingest/from-s3."
+  type        = string
+}
+
+variable "s3_source_region" {
+  description = "Region for the S3-compatible source. Use auto for R2."
+  type        = string
+  default     = "auto"
+}
+
+variable "s3_source_allowed_buckets" {
+  description = "S3 source bucket names accepted by the ingest endpoint."
+  type        = list(string)
+}
+
+variable "s3_source_access_key_id_secret_id" {
+  description = "Secret Manager secret ID that will hold S3_SOURCE_ACCESS_KEY_ID."
+  type        = string
+  default     = "s3-source-access-key-id"
+}
+
+variable "s3_source_secret_access_key_secret_id" {
+  description = "Secret Manager secret ID that will hold S3_SOURCE_SECRET_ACCESS_KEY."
+  type        = string
+  default     = "s3-source-secret-access-key"
+}
+
+variable "redis_url_secret_id" {
+  description = "Secret Manager secret ID that will hold REDIS_URL."
+  type        = string
+  default     = "redis-url"
+}
+
+variable "redis_key_prefix" {
+  description = "Redis key prefix for upload sessions."
+  type        = string
+  default     = "upload-session:"
+}
+
 variable "labels" {
   description = "Labels applied to supported resources."
   type        = map(string)

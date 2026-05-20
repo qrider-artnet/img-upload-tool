@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 720" width="860" height="720" role="img">
+  <title>Artnet image read path architecture</title>
+  <desc>A user requests an image URL from artworks.artnet.com. Cloudflare routes the request to the Variant Worker, which parses cache-versioned paths and variant parameters, serves originals or persisted WebP variants from R2, or generates missing fixed WebP variants and writes them back to R2.</desc>
+  <style>
+    .th { font: 500 14px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #2c2c2a; }
+    .ts { font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #5f5e5a; }
+    .small { font: 400 11px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #5f5e5a; }
+    .header { font: 500 14px "Inter", "Helvetica Neue", Arial, sans-serif; fill: #2c2c2a; }
+
+    .caller-fill { fill: #EEEDFE; stroke: #534AB7; stroke-width: 0.5; }
+    .caller-title { fill: #3C3489; }
+    .caller-sub { fill: #534AB7; }
+
+    .edge-fill { fill: #E1F5EE; stroke: #0F6E56; stroke-width: 0.5; }
+    .edge-title { fill: #085041; }
+    .edge-sub { fill: #0F6E56; }
+
+    .r2-fill { fill: #FAEEDA; stroke: #854F0B; stroke-width: 0.5; }
+    .r2-title { fill: #633806; }
+    .r2-sub { fill: #854F0B; }
+
+    .info-fill { fill: #F1EFE8; stroke: #5F5E5A; stroke-width: 0.5; }
+    .info-title { fill: #444441; }
+    .info-sub { fill: #5F5E5A; }
+
+    .error-fill { fill: #FBE7E7; stroke: #A61B1B; stroke-width: 0.5; }
+    .error-title { fill: #7F1111; }
+    .error-sub { fill: #A61B1B; }
+
+    .arrow-line { stroke: #5F5E5A; stroke-width: 1.5; fill: none; }
+    .arrow-grey { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .arrow-dashed { stroke: #888780; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+    .arrow-error { stroke: #A61B1B; stroke-width: 1.5; fill: none; stroke-dasharray: 5 3; }
+    .label { fill: #5F5E5A; font: 400 12px "Inter", "Helvetica Neue", Arial, sans-serif; }
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <text class="header" x="40" y="34">Image Request Read Path</text>
+
+  <!-- Request entry -->
+  <rect class="caller-fill" x="40" y="62" width="190" height="72" rx="8"/>
+  <text class="th caller-title" x="135" y="86" text-anchor="middle" dominant-baseline="central">End user browser</text>
+  <text class="ts caller-sub" x="135" y="106" text-anchor="middle" dominant-baseline="central">GET artworks.artnet.com</text>
+  <text class="small caller-sub" x="135" y="124" text-anchor="middle" dominant-baseline="central">/_v/&lt;cacheVersion&gt;/&lt;objectKey&gt;?variant=w640</text>
+
+  <rect class="edge-fill" x="300" y="62" width="210" height="72" rx="8"/>
+  <text class="th edge-title" x="405" y="86" text-anchor="middle" dominant-baseline="central">Cloudflare edge</text>
+  <text class="ts edge-sub" x="405" y="106" text-anchor="middle" dominant-baseline="central">Routes to Variant Worker</text>
+  <text class="small edge-sub" x="405" y="124" text-anchor="middle" dominant-baseline="central">Edge cache may reuse full URL</text>
+
+  <line x1="230" y1="98" x2="297" y2="98" class="arrow-line" marker-end="url(#arrow)"/>
+  <text class="label" x="265" y="88" text-anchor="middle">HTTP GET</text>
+
+  <!-- Worker parse -->
+  <rect class="edge-fill" x="275" y="180" width="260" height="96" rx="10"/>
+  <text class="th edge-title" x="405" y="204" text-anchor="middle" dominant-baseline="central">Variant Worker</text>
+  <text class="ts edge-sub" x="405" y="226" text-anchor="middle" dominant-baseline="central">Parse URL, validate objectKey</text>
+  <text class="ts edge-sub" x="405" y="244" text-anchor="middle" dominant-baseline="central">Strip /_v/&lt;cacheVersion&gt;/ prefix</text>
+  <text class="ts edge-sub" x="405" y="262" text-anchor="middle" dominant-baseline="central">Map medium/large and legacy i/o URLs</text>
+
+  <line x1="405" y1="134" x2="405" y2="178" class="arrow-line" marker-end="url(#arrow)"/>
+
+  <rect class="error-fill" x="600" y="190" width="210" height="76" rx="8"/>
+  <text class="th error-title" x="705" y="214" text-anchor="middle" dominant-baseline="central">Invalid request</text>
+  <text class="ts error-sub" x="705" y="234" text-anchor="middle" dominant-baseline="central">Unknown query params, bad key,</text>
+  <text class="ts error-sub" x="705" y="252" text-anchor="middle" dominant-baseline="central">unsupported variant → 400</text>
+  <line x1="535" y1="228" x2="597" y2="228" class="arrow-error" marker-end="url(#arrow)"/>
+
+  <!-- Decision -->
+  <rect class="info-fill" x="300" y="320" width="210" height="72" rx="8"/>
+  <text class="th info-title" x="405" y="344" text-anchor="middle" dominant-baseline="central">Request type?</text>
+  <text class="ts info-sub" x="405" y="364" text-anchor="middle" dominant-baseline="central">Original if no variant</text>
+  <text class="ts info-sub" x="405" y="382" text-anchor="middle" dominant-baseline="central">WebP variant if variant is set</text>
+  <line x1="405" y1="276" x2="405" y2="318" class="arrow-line" marker-end="url(#arrow)"/>
+
+  <!-- R2 objects -->
+  <rect class="r2-fill" x="55" y="455" width="230" height="92" rx="8"/>
+  <text class="th r2-title" x="170" y="478" text-anchor="middle" dominant-baseline="central">R2 original</text>
+  <text class="ts r2-sub" x="170" y="499" text-anchor="middle" dominant-baseline="central">&lt;objectKey&gt;</text>
+  <text class="ts r2-sub" x="170" y="517" text-anchor="middle" dominant-baseline="central">Content-Type preserved</text>
+  <text class="small r2-sub" x="170" y="535" text-anchor="middle" dominant-baseline="central">custom metadata: cache-version</text>
+
+  <rect class="r2-fill" x="575" y="455" width="230" height="92" rx="8"/>
+  <text class="th r2-title" x="690" y="478" text-anchor="middle" dominant-baseline="central">R2 persisted WebP</text>
+  <text class="ts r2-sub" x="690" y="499" text-anchor="middle" dominant-baseline="central">variants/webp/&lt;variant&gt;/...</text>
+  <text class="ts r2-sub" x="690" y="517" text-anchor="middle" dominant-baseline="central">Versioned or unversioned key</text>
+  <text class="small r2-sub" x="690" y="535" text-anchor="middle" dominant-baseline="central">Content-Type: image/webp</text>
+
+  <line x1="335" y1="392" x2="205" y2="453" class="arrow-line" marker-end="url(#arrow)"/>
+  <text class="label" x="255" y="420" text-anchor="middle">original lookup</text>
+
+  <line x1="475" y1="392" x2="648" y2="453" class="arrow-line" marker-end="url(#arrow)"/>
+  <text class="label" x="585" y="420" text-anchor="middle">variant lookup</text>
+
+  <!-- Cache version check -->
+  <rect class="info-fill" x="310" y="455" width="190" height="92" rx="8"/>
+  <text class="th info-title" x="405" y="478" text-anchor="middle" dominant-baseline="central">Version guard</text>
+  <text class="ts info-sub" x="405" y="499" text-anchor="middle" dominant-baseline="central">For /_v/ URLs, original</text>
+  <text class="ts info-sub" x="405" y="517" text-anchor="middle" dominant-baseline="central">must have matching</text>
+  <text class="small info-sub" x="405" y="535" text-anchor="middle" dominant-baseline="central">cache-version metadata</text>
+
+  <line x1="285" y1="501" x2="307" y2="501" class="arrow-grey" marker-end="url(#arrow)"/>
+  <line x1="500" y1="501" x2="572" y2="501" class="arrow-grey" marker-end="url(#arrow)"/>
+
+  <rect class="error-fill" x="315" y="590" width="180" height="58" rx="8"/>
+  <text class="th error-title" x="405" y="612" text-anchor="middle" dominant-baseline="central">Not found</text>
+  <text class="ts error-sub" x="405" y="632" text-anchor="middle" dominant-baseline="central">Missing original or version mismatch → 404</text>
+  <line x1="405" y1="547" x2="405" y2="588" class="arrow-error" marker-end="url(#arrow)"/>
+
+  <!-- Transform on miss -->
+  <rect class="edge-fill" x="575" y="590" width="230" height="70" rx="8"/>
+  <text class="th edge-title" x="690" y="613" text-anchor="middle" dominant-baseline="central">Variant miss</text>
+  <text class="ts edge-sub" x="690" y="634" text-anchor="middle" dominant-baseline="central">Transform original with Images binding</text>
+  <text class="small edge-sub" x="690" y="652" text-anchor="middle" dominant-baseline="central">thumb, w320, w640, w960, w1280, w1600</text>
+  <line x1="690" y1="547" x2="690" y2="588" class="arrow-dashed" marker-end="url(#arrow)"/>
+  <path d="M805 625C835 625 835 501 808 501" class="arrow-dashed" marker-end="url(#arrow)"/>
+  <text class="label" x="838" y="570" text-anchor="middle" transform="rotate(90 838 570)">write back</text>
+
+  <!-- Responses -->
+  <path d="M170 547C170 690 135 690 135 136" class="arrow-grey" marker-end="url(#arrow)"/>
+  <text class="label" x="92" y="610" text-anchor="middle" transform="rotate(-90 92 610)">200 original, immutable cache</text>
+
+  <path d="M690 660C690 695 135 695 135 136" class="arrow-grey" marker-end="url(#arrow)"/>
+  <text class="label" x="438" y="686" text-anchor="middle">200 WebP variant, immutable cache</text>
+</svg>

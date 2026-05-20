@@ -5,6 +5,8 @@ import { readConfig } from './config.js';
 import { UploadFunctionError } from './errors.js';
 import { createGcsUploadStorage } from './storage/gcs-storage.js';
 import { createR2ReplicationStorage } from './storage/r2-replication-storage.js';
+import { createS3SourceStorage } from './storage/s3-source-storage.js';
+import { createRedisUploadSessionStore } from './redis-upload-session-store.js';
 import { InMemoryUploadSessionStore } from './upload-session-store.js';
 
 const config = readConfig(process.env);
@@ -20,7 +22,20 @@ const app = createUploadFunctionApp({
     secretAccessKey: config.R2_SECRET_ACCESS_KEY,
     maxRetries: config.R2_REPLICATION_RETRIES,
   }),
-  uploadSessionStore: new InMemoryUploadSessionStore(),
+  sourceStorage: createS3SourceStorage({
+    endpoint: config.S3_SOURCE_ENDPOINT,
+    region: config.S3_SOURCE_REGION,
+    accessKeyId: config.S3_SOURCE_ACCESS_KEY_ID,
+    secretAccessKey: config.S3_SOURCE_SECRET_ACCESS_KEY,
+    allowedBuckets: config.S3_SOURCE_ALLOWED_BUCKETS,
+  }),
+  uploadSessionStore:
+    config.REDIS_URL === undefined
+      ? new InMemoryUploadSessionStore()
+      : createRedisUploadSessionStore({
+          redisUrl: config.REDIS_URL,
+          keyPrefix: config.REDIS_KEY_PREFIX,
+        }),
 });
 
 /**

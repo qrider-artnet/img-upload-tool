@@ -144,7 +144,7 @@ const deleteAllObjectsByPrefix = async (
       .filter((key): key is string => typeof key === 'string' && key.length > 0);
 
     if (keys.length > 0) {
-      await client.send(
+      const deleted = await client.send(
         new DeleteObjectsCommand({
           Bucket: bucketName,
           Delete: {
@@ -153,6 +153,15 @@ const deleteAllObjectsByPrefix = async (
           },
         }),
       );
+
+      if (deleted.Errors !== undefined && deleted.Errors.length > 0) {
+        throw Object.assign(new Error('R2 batch delete reported per-object failures.'), {
+          name: 'DeleteObjectsError',
+          failedKeys: deleted.Errors.map((error) => error.Key).filter(
+            (key): key is string => typeof key === 'string',
+          ),
+        });
+      }
     }
 
     continuationToken = listed.IsTruncated === true ? listed.NextContinuationToken : undefined;

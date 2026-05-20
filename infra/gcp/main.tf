@@ -10,6 +10,15 @@ locals {
     var.r2_access_key_id_secret_id,
     var.r2_secret_access_key_secret_id,
   ])
+
+  s3_source_secret_ids = toset([
+    var.s3_source_access_key_id_secret_id,
+    var.s3_source_secret_access_key_secret_id,
+  ])
+
+  redis_secret_ids = toset([
+    var.redis_url_secret_id,
+  ])
 }
 
 resource "google_project_service" "required" {
@@ -91,8 +100,54 @@ resource "google_secret_manager_secret" "r2" {
   depends_on = [google_project_service.required]
 }
 
+resource "google_secret_manager_secret" "s3_source" {
+  for_each = local.s3_source_secret_ids
+
+  project   = var.project_id
+  secret_id = each.value
+  labels    = var.labels
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_secret_manager_secret" "redis" {
+  for_each = local.redis_secret_ids
+
+  project   = var.project_id
+  secret_id = each.value
+  labels    = var.labels
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.required]
+}
+
 resource "google_secret_manager_secret_iam_member" "upload_function_r2_secret_accessor" {
   for_each = google_secret_manager_secret.r2
+
+  project   = var.project_id
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.upload_function.member
+}
+
+resource "google_secret_manager_secret_iam_member" "upload_function_s3_source_secret_accessor" {
+  for_each = google_secret_manager_secret.s3_source
+
+  project   = var.project_id
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.upload_function.member
+}
+
+resource "google_secret_manager_secret_iam_member" "upload_function_redis_secret_accessor" {
+  for_each = google_secret_manager_secret.redis
 
   project   = var.project_id
   secret_id = each.value.secret_id

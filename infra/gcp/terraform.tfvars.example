@@ -18,3 +18,13 @@ cors_allow_origin = "https://your-upload-ui.example.com"
 # after apply; do not put secret values in this file.
 r2_account_id = "your-cloudflare-account-id"
 r2_bucket     = "your-r2-replication-bucket"
+
+# S3-compatible source ingest values. For the mock R2 source bucket, endpoint is
+# typically https://<account-id>.r2.cloudflarestorage.com and region is auto.
+s3_source_endpoint        = "https://your-source-s3-endpoint"
+s3_source_region          = "auto"
+s3_source_allowed_buckets = [
+  "artnet-vendor-feed",
+]
+
+redis_key_prefix = "upload-session:"

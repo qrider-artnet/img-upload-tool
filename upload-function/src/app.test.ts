@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
@@ -8,15 +9,19 @@ import { parseObjectKey } from './object-key.js';
 import {
   ErrorResponseSchema,
   FinalizeResponseSchema,
+  IngestFromS3ResponseSchema,
   PresignResponseSchema,
   type Tombstone,
 } from './schemas.js';
+import type { SourceStorage, S3SourceObjectMetadata } from './storage/s3-source-storage.js';
 import type { ReplicationPutInput, ReplicationStorage } from './storage/replication-storage.js';
 import type {
   ObjectMetadata,
   SignedUploadUrl,
   SignedUploadUrlInput,
   UploadStorage,
+  WriteObjectInput,
+  WriteObjectResult,
 } from './storage/upload-storage.js';
 import type { ObjectKey } from './types.js';
 import { InMemoryUploadSessionStore } from './upload-session-store.js';
@@ -365,6 +370,110 @@ describe('Upload Function app', () => {
     expect(finalizeResponse.status).toBe(200);
     const finalizeBody = FinalizeResponseSchema.parse(await finalizeResponse.json());
     expect(finalizeBody.replicatedToR2).toBe(false);
+  });
+
+  it('ingests an allowed S3 source object into GCS and R2', async () => {
+    const { app, replication, sourceStorage } = createTestApp();
+    const sourceUri = 's3://artnet-vendor-feed/scrape-2026-05-08/lot.jpg';
+    const objectKey = parseObjectKey('lot_images/425939177/20260310/638775/195.jpg');
+    sourceStorage.metadataByUri.set(sourceUri, {
+      contentLength: 11,
+      contentType: 'image/jpeg',
+    });
+    sourceStorage.bytesByUri.set(sourceUri, Buffer.from('hello-world'));
+
+    const response = await app.request('/v1/ingest/from-s3', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceUri,
+        objectKey,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = IngestFromS3ResponseSchema.parse(await response.json());
+    expect(body).toMatchObject({
+      objectKey,
+      size: 11,
+      sha256: createHash('sha256').update('hello-world').digest('hex'),
+      contentType: 'image/jpeg',
+      sourceUri,
+      replicatedToR2: true,
+    });
+    expect(body.publicUrl).toMatch(
+      /^https:\/\/artworks\.artnet\.test\/_v\/[0-9A-HJKMNP-TV-Z]{26}\/lot_images\/425939177\/20260310\/638775\/195\.jpg$/,
+    );
+    expect(replication.putByKey.get(objectKey)?.cacheVersion).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+  });
+
+  it('allows S3 ingest content type overrides', async () => {
+    const { app, sourceStorage } = createTestApp();
+    const sourceUri = 's3://artnet-vendor-feed/scrape-2026-05-08/lot.bin';
+    const objectKey = parseObjectKey('lot_images/425939177/20260310/638775/195.jpg');
+    sourceStorage.metadataByUri.set(sourceUri, {
+      contentLength: 5,
+      contentType: 'application/octet-stream',
+    });
+    sourceStorage.bytesByUri.set(sourceUri, Buffer.from('bytes'));
+
+    const response = await app.request('/v1/ingest/from-s3', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceUri,
+        objectKey,
+        contentType: 'image/jpeg',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = IngestFromS3ResponseSchema.parse(await response.json());
+    expect(body.contentType).toBe('image/jpeg');
+  });
+
+  it('rejects S3 ingest requests for disallowed source buckets', async () => {
+    const { app, sourceStorage } = createTestApp();
+    sourceStorage.metadataError = new UploadFunctionError({
+      code: 'invalid_source',
+      status: 400,
+      message: 'sourceUri bucket is not allowed.',
+    });
+
+    const response = await app.request('/v1/ingest/from-s3', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceUri: 's3://other-bucket/source.jpg',
+        objectKey: 'lot_images/425939177/20260310/638775/195.jpg',
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = ErrorResponseSchema.parse(await response.json());
+    expect(body.error.code).toBe('invalid_source');
+  });
+
+  it('returns source_not_found for missing S3 source objects', async () => {
+    const { app, sourceStorage } = createTestApp();
+    sourceStorage.metadataError = new UploadFunctionError({
+      code: 'source_not_found',
+      status: 404,
+      message: 'Source object was not found.',
+    });
+
+    const response = await app.request('/v1/ingest/from-s3', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceUri: 's3://artnet-vendor-feed/missing.jpg',
+        objectKey: 'lot_images/425939177/20260310/638775/195.jpg',
+      }),
+    });
+
+    expect(response.status).toBe(404);
+    const body = ErrorResponseSchema.parse(await response.json());
+    expect(body.error.code).toBe('source_not_found');
   });
 
   it('returns upload_not_received when the object is missing from GCS', async () => {
@@ -757,15 +866,17 @@ describe('Upload Function app', () => {
 const createTestApp = () => {
   const storage = new FakeUploadStorage();
   const replication = new FakeReplicationStorage();
+  const sourceStorage = new FakeSourceStorage();
   const app = createUploadFunctionApp({
     publicBaseUrl: 'https://artworks.artnet.test',
     signedUrlTtlSeconds: 900,
     storage,
     replication,
+    sourceStorage,
     uploadSessionStore: new InMemoryUploadSessionStore(),
   });
 
-  return { app, storage, replication };
+  return { app, storage, replication, sourceStorage };
 };
 
 const validPresignBody = () => ({
@@ -903,6 +1014,22 @@ class FakeUploadStorage implements UploadStorage {
     return Promise.resolve(this.tombstones.has(objectKey));
   }
 
+  public async writeObject(input: WriteObjectInput): Promise<WriteObjectResult> {
+    const body = await input.bodyFactory();
+    const bytes = await readNodeStream(body);
+    this.bytesByKey.set(input.objectKey, bytes);
+    this.metadataByKey.set(input.objectKey, {
+      contentType: input.contentType,
+      size: bytes.byteLength,
+      updatedAt: new Date('2026-05-08T12:30:00.000Z'),
+    });
+    return {
+      size: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      uploadedAt: new Date('2026-05-08T12:30:00.000Z'),
+    };
+  }
+
   public writeTombstone(objectKey: ObjectKey, tombstone: Tombstone): Promise<void> {
     if (this.tombstoneWriteError !== undefined) {
       return Promise.reject(this.tombstoneWriteError);
@@ -911,3 +1038,64 @@ class FakeUploadStorage implements UploadStorage {
     return Promise.resolve();
   }
 }
+
+class FakeSourceStorage implements SourceStorage {
+  public readonly metadataByUri = new Map<string, S3SourceObjectMetadata>();
+
+  public readonly bytesByUri = new Map<string, Buffer>();
+
+  public metadataError: UploadFunctionError | undefined = undefined;
+
+  public healthError: UploadFunctionError | undefined = undefined;
+
+  public getObjectMetadata(sourceUri: string): Promise<S3SourceObjectMetadata> {
+    if (this.metadataError !== undefined) {
+      return Promise.reject(this.metadataError);
+    }
+
+    const metadata = this.metadataByUri.get(sourceUri);
+    if (metadata === undefined) {
+      return Promise.reject(
+        new UploadFunctionError({
+          code: 'source_not_found',
+          status: 404,
+          message: 'Source object was not found.',
+        }),
+      );
+    }
+
+    return Promise.resolve(metadata);
+  }
+
+  public getObjectStream(sourceUri: string): Promise<Readable> {
+    const bytes = this.bytesByUri.get(sourceUri);
+    if (bytes === undefined) {
+      return Promise.reject(
+        new UploadFunctionError({
+          code: 'source_not_found',
+          status: 404,
+          message: 'Source object was not found.',
+        }),
+      );
+    }
+
+    return Promise.resolve(Readable.from(bytes));
+  }
+
+  public healthCheck(): Promise<void> {
+    if (this.healthError !== undefined) {
+      return Promise.reject(this.healthError);
+    }
+
+    return Promise.resolve();
+  }
+}
+
+const readNodeStream = async (stream: Readable): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+
+  return Buffer.concat(chunks);
+};

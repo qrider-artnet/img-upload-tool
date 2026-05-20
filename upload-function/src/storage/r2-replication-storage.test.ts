@@ -199,6 +199,33 @@ describe('R2ReplicationStorage', () => {
     });
   });
 
+  it('surfaces per-object batch delete failures', async () => {
+    const storage = createR2ReplicationStorage(baseConfig);
+    sendMock
+      .mockResolvedValueOnce({
+        Contents: [
+          { Key: 'variants/webp/w640/lot_images/425939177/20260310/638775/195/_v/one.webp' },
+        ],
+        IsTruncated: false,
+      })
+      .mockResolvedValueOnce({
+        Errors: [
+          {
+            Key: 'variants/webp/w640/lot_images/425939177/20260310/638775/195/_v/one.webp',
+            Code: 'InternalError',
+          },
+        ],
+      });
+
+    await expect(
+      storage.deleteByPrefix('variants/webp/w640/lot_images/425939177/20260310/638775/195/_v/'),
+    ).rejects.toMatchObject({
+      code: 'r2_unavailable',
+      status: 503,
+      details: { r2Name: 'DeleteObjectsError' },
+    });
+  });
+
   it('does not send a batch delete when a prefix is empty', async () => {
     const storage = createR2ReplicationStorage(baseConfig);
     sendMock.mockResolvedValueOnce({ Contents: [], IsTruncated: false });

@@ -2,8 +2,6 @@
 
 These examples show how callers integrate with the Upload Function.
 
-Current stage:
-
 - Direct upload from a browser or server application:
 
   ```text
@@ -11,8 +9,6 @@ Current stage:
   PUT bytes to the returned GCS signed URL
   POST /v1/uploads/:uploadId/finalize
   ```
-
-Future stage:
 
 - S3-compatible source ingest:
 
@@ -25,7 +21,7 @@ Future stage:
 - [browser-direct-upload.html](./browser-direct-upload.html) and [browser-direct-upload.ts](./browser-direct-upload.ts) - runnable browser flow using `File`, `fetch`, and Web Crypto.
 - [server-direct-upload.ts](./server-direct-upload.ts) - runnable backend/server CLI using Node 22, `fetch`, and `node:crypto`.
 - [curl-direct-upload.md](./curl-direct-upload.md) - manual smoke-test flow with curl.
-- [s3-ingest.md](./s3-ingest.md) - future single-call S3/R2 source ingest flow.
+- [s3-ingest.md](./s3-ingest.md) - single-call S3/R2 source ingest flow.
 
 ## Build Examples
 

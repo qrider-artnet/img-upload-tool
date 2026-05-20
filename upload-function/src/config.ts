@@ -11,6 +11,24 @@ const EnvSchema = z
     R2_ACCESS_KEY_ID: z.string().min(1),
     R2_SECRET_ACCESS_KEY: z.string().min(1),
     R2_REPLICATION_RETRIES: z.coerce.number().int().min(0).default(3),
+    S3_SOURCE_ENDPOINT: z.url(),
+    S3_SOURCE_REGION: z.string().min(1),
+    S3_SOURCE_ACCESS_KEY_ID: z.string().min(1),
+    S3_SOURCE_SECRET_ACCESS_KEY: z.string().min(1),
+    S3_SOURCE_ALLOWED_BUCKETS: z
+      .string()
+      .min(1)
+      .transform((value) =>
+        value
+          .split(',')
+          .map((bucket) => bucket.trim())
+          .filter((bucket) => bucket.length > 0),
+      )
+      .refine((buckets) => buckets.length > 0, {
+        message: 'S3_SOURCE_ALLOWED_BUCKETS must include at least one bucket.',
+      }),
+    REDIS_URL: z.url().optional(),
+    REDIS_KEY_PREFIX: z.string().min(1).default('upload-session:'),
   })
   .passthrough();
 

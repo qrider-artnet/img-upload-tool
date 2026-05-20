@@ -1,4 +1,7 @@
 import type { Readable } from 'node:stream';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createHash } from 'node:crypto';
 
 import { Storage } from '@google-cloud/storage';
 import { z } from 'zod';
@@ -12,6 +15,8 @@ import {
   type SignedUploadUrl,
   type SignedUploadUrlInput,
   type UploadStorage,
+  type WriteObjectInput,
+  type WriteObjectResult,
 } from './upload-storage.js';
 
 const GcsMetadataSchema = z
@@ -157,6 +162,63 @@ export const createGcsUploadStorage = (config: GcsUploadStorageConfig): UploadSt
       }
     },
 
+    writeObject: async (input: WriteObjectInput): Promise<WriteObjectResult> => {
+      try {
+        return await retryTransientWithResult(async () => {
+          const hash = createHash('sha256');
+          let bytesWritten = 0;
+          const body = await input.bodyFactory();
+          const hashStream = new Transform({
+            transform(chunk: Buffer | string, _encoding, callback) {
+              const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              bytesWritten += bytes.byteLength;
+              hash.update(bytes);
+              callback(null, chunk);
+            },
+          });
+
+          await pipeline(
+            body,
+            hashStream,
+            bucket.file(input.objectKey).createWriteStream({
+              contentType: input.contentType,
+              resumable: false,
+              metadata: {
+                contentType: input.contentType,
+              },
+            }),
+          );
+
+          if (bytesWritten !== input.contentLength) {
+            throw new UploadFunctionError({
+              code: 'source_unavailable',
+              status: 502,
+              message: 'Source object stream ended before the expected content length.',
+              details: { expected: input.contentLength, actual: bytesWritten },
+            });
+          }
+
+          return {
+            size: bytesWritten,
+            sha256: hash.digest('hex'),
+            uploadedAt: new Date(),
+          };
+        });
+      } catch (err: unknown) {
+        if (err instanceof UploadFunctionError) {
+          throw err;
+        }
+
+        const details = describeStorageError(err);
+        throw new UploadFunctionError({
+          code: 'storage_unavailable',
+          status: 503,
+          message: 'Unable to write object to GCS.',
+          ...(details === undefined ? {} : { details }),
+        });
+      }
+    },
+
     writeTombstone: async (objectKey: ObjectKey, tombstone: Tombstone): Promise<void> => {
       try {
         await retryTransient(async () => {
@@ -188,6 +250,26 @@ const retryTransient = async (operation: () => Promise<void>): Promise<void> => 
       return;
     } catch (err: unknown) {
       if (attempt >= MAX_TRANSIENT_RETRIES || !isRetryableStorageError(err)) {
+        throw err;
+      }
+
+      await sleep(retryDelayForAttempt(attempt));
+    }
+  }
+};
+
+const retryTransientWithResult = async <Result>(
+  operation: () => Promise<Result>,
+): Promise<Result> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (err: unknown) {
+      if (err instanceof UploadFunctionError || attempt >= MAX_TRANSIENT_RETRIES) {
+        throw err;
+      }
+
+      if (!isRetryableStorageError(err)) {
         throw err;
       }
 
