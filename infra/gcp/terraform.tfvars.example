@@ -14,6 +14,9 @@ cors_allowed_origins = [
 public_base_url   = "https://artworks.artnet.com"
 cors_allow_origin = "https://your-upload-ui.example.com"
 
+staging_upload_retention_days = 5
+tombstone_retention_days      = 7
+
 # Cloudflare R2 values. The access key values themselves are stored in Secret Manager
 # after apply; do not put secret values in this file.
 r2_account_id = "your-cloudflare-account-id"

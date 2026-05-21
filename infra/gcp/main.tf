@@ -65,6 +65,17 @@ resource "google_storage_bucket" "image_originals" {
     }
   }
 
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    condition {
+      age            = var.staging_upload_retention_days
+      matches_prefix = ["staging/uploads/"]
+    }
+  }
+
   depends_on = [google_project_service.required]
 }
 

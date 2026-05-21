@@ -32,7 +32,12 @@ import type { SourceStorage } from './storage/s3-source-storage.js';
 import type { ReplicationStorage } from './storage/replication-storage.js';
 import type { UploadStorage } from './storage/upload-storage.js';
 import type { AllowedContentType, ObjectKey } from './types.js';
-import { parseUploadId, type UploadSessionStore } from './upload-session-store.js';
+import {
+  buildStagingObjectKey,
+  createUploadId,
+  parseUploadId,
+  type UploadSessionStore,
+} from './upload-session-store.js';
 import { buildAllWebpVariantKeys, buildAllWebpVariantPrefixes } from './variant-keys.js';
 
 const CORS_ALLOW_HEADERS = 'Content-Type, X-Artnet-Product-Id, X-Artnet-Auction-House-Id';
@@ -142,12 +147,16 @@ export const createUploadFunctionApp = (
       imageVariantSuffix: request.imageVariantSuffix,
       contentType,
     });
+    const uploadId = createUploadId();
+    const stagingObjectKey = buildStagingObjectKey(uploadId, objectKey);
     const expiresAt = new Date(Date.now() + services.signedUrlTtlSeconds * 1000);
     const session = await services.uploadSessionStore.create({
+      uploadId,
       contentLength: request.contentLength,
       contentType,
       expiresAt,
       objectKey,
+      stagingObjectKey,
       productId,
       ...(request.kind === 'auction-lot' ? { auctionHouseId: request.auctionHouseId } : {}),
     });
@@ -155,7 +164,7 @@ export const createUploadFunctionApp = (
       contentLength: request.contentLength,
       contentType,
       expiresAt,
-      objectKey,
+      objectKey: session.stagingObjectKey,
     });
 
     log.info({
@@ -201,7 +210,7 @@ export const createUploadFunctionApp = (
       c.req.header(TRUSTED_AUCTION_HOUSE_HEADER),
     );
 
-    const metadata = await services.storage.getObjectMetadata(session.objectKey);
+    const metadata = await services.storage.getObjectMetadata(session.stagingObjectKey);
 
     if (metadata === undefined) {
       throw new UploadFunctionError({
@@ -212,7 +221,7 @@ export const createUploadFunctionApp = (
     }
 
     if (metadata.size !== session.contentLength) {
-      await services.storage.deleteObject(session.objectKey);
+      await services.storage.deleteObject(session.stagingObjectKey);
       throw new UploadFunctionError({
         code: 'size_mismatch',
         status: 400,
@@ -230,12 +239,20 @@ export const createUploadFunctionApp = (
         expected: session.contentType,
         actual: metadata.contentType,
       });
-      await services.storage.deleteObject(session.objectKey);
+      await services.storage.deleteObject(session.stagingObjectKey);
       throw new UploadFunctionError({
         code: 'content_type_mismatch',
         status: 400,
         message: 'Uploaded content type does not match the presign request.',
         details: { expected: session.contentType, actual: metadata.contentType },
+      });
+    }
+
+    if (session.stagingObjectKey !== session.objectKey) {
+      await services.storage.promoteObject({
+        sourceObjectKey: session.stagingObjectKey,
+        destinationObjectKey: session.objectKey,
+        contentType: session.contentType,
       });
     }
 
@@ -390,6 +407,7 @@ export const createUploadFunctionApp = (
         session.auctionHouseId,
         c.req.header(TRUSTED_AUCTION_HOUSE_HEADER),
       );
+      await services.storage.deleteObject(session.stagingObjectKey);
     }
 
     await services.uploadSessionStore.delete(uploadId);

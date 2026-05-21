@@ -2,7 +2,13 @@ import { ulid } from 'ulid';
 
 import { UploadFunctionError } from './errors.js';
 import type { ProductId } from './object-key.js';
-import type { AllowedContentType, ObjectKey, UploadId } from './types.js';
+import type {
+  AllowedContentType,
+  ObjectKey,
+  StagingObjectKey,
+  StorageObjectKey,
+  UploadId,
+} from './types.js';
 
 /**
  * Temporary state recorded after presign and consumed during finalize.
@@ -10,6 +16,7 @@ import type { AllowedContentType, ObjectKey, UploadId } from './types.js';
 export interface UploadSession {
   readonly uploadId: UploadId;
   readonly objectKey: ObjectKey;
+  readonly stagingObjectKey: StorageObjectKey;
   readonly productId: ProductId;
   readonly auctionHouseId?: string;
   readonly contentType: AllowedContentType;
@@ -21,7 +28,9 @@ export interface UploadSession {
  * Input required to create a direct-upload session.
  */
 export interface CreateUploadSessionInput {
+  readonly uploadId: UploadId;
   readonly objectKey: ObjectKey;
+  readonly stagingObjectKey: StorageObjectKey;
   readonly productId: ProductId;
   readonly auctionHouseId?: string;
   readonly contentType: AllowedContentType;
@@ -73,9 +82,8 @@ export class InMemoryUploadSessionStore implements UploadSessionStore {
       );
     }
 
-    const uploadId = createUploadId();
-    const session: UploadSession = { uploadId, ...input };
-    this.#sessions.set(uploadId, session);
+    const session: UploadSession = { ...input };
+    this.#sessions.set(input.uploadId, session);
     return Promise.resolve(session);
   }
 
@@ -112,6 +120,12 @@ export class InMemoryUploadSessionStore implements UploadSessionStore {
     }
   }
 }
+
+/**
+ * Builds the private GCS key that receives direct-upload bytes before finalize.
+ */
+export const buildStagingObjectKey = (uploadId: UploadId, objectKey: ObjectKey): StagingObjectKey =>
+  `staging/uploads/${uploadId}/${objectKey}` as StagingObjectKey;
 
 /**
  * Validates and brands an upload ID from a route parameter.

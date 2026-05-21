@@ -17,14 +17,19 @@ import type { SourceStorage, S3SourceObjectMetadata } from './storage/s3-source-
 import type { ReplicationPutInput, ReplicationStorage } from './storage/replication-storage.js';
 import type {
   ObjectMetadata,
+  PromoteObjectInput,
   SignedUploadUrl,
   SignedUploadUrlInput,
   UploadStorage,
   WriteObjectInput,
   WriteObjectResult,
 } from './storage/upload-storage.js';
-import type { ObjectKey } from './types.js';
-import { InMemoryUploadSessionStore } from './upload-session-store.js';
+import type { ObjectKey, StorageObjectKey } from './types.js';
+import {
+  buildStagingObjectKey,
+  InMemoryUploadSessionStore,
+  parseUploadId,
+} from './upload-session-store.js';
 import { buildAllWebpVariantKeys, buildAllWebpVariantPrefixes } from './variant-keys.js';
 
 describe('Upload Function app', () => {
@@ -42,6 +47,7 @@ describe('Upload Function app', () => {
     expect(body.objectKey).toBe(
       'products/artnet-auctions/auction-lots/425939177/20260310/638775/images/195.jpg',
     );
+    expect(body.uploadUrl).toContain(`/staging/uploads/${body.uploadId}/`);
     expect(body.uploadHeaders).toEqual({
       'Content-Type': 'image/jpeg',
       'Content-Length': '1024576',
@@ -250,8 +256,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    const { objectKey, stagingObjectKey } = stagePresignedUpload(storage, presignBody, {
       contentType: 'image/jpeg',
       size: 1024576,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -273,6 +278,7 @@ describe('Upload Function app', () => {
       replicatedToR2: true,
     });
     expect(replication.putByKey.get(objectKey)?.cacheVersion).toBe(presignBody.uploadId);
+    expect(storage.deletedKeys).toEqual([stagingObjectKey]);
 
     const secondFinalizeResponse = await app.request(
       `/v1/uploads/${presignBody.uploadId}/finalize`,
@@ -292,8 +298,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validGalleryPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    stagePresignedUpload(storage, presignBody, {
       contentType: 'image/jpeg',
       size: 1024576,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -322,8 +327,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validPdbPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    stagePresignedUpload(storage, presignBody, {
       contentType: 'image/jpeg',
       size: 1024576,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -350,8 +354,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    stagePresignedUpload(storage, presignBody, {
       contentType: 'image/jpeg',
       size: 1024576,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -503,8 +506,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    const { stagingObjectKey } = stagePresignedUpload(storage, presignBody, {
       contentType: 'image/jpeg',
       size: 99,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -518,7 +520,7 @@ describe('Upload Function app', () => {
     expect(finalizeResponse.status).toBe(400);
     const body = ErrorResponseSchema.parse(await finalizeResponse.json());
     expect(body.error.code).toBe('size_mismatch');
-    expect(storage.deletedKeys).toEqual([objectKey]);
+    expect(storage.deletedKeys).toEqual([stagingObjectKey]);
   });
 
   it('accepts a finalize when GCS reports a parameterized content type matching the session', async () => {
@@ -529,8 +531,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    stagePresignedUpload(storage, presignBody, {
       contentType: 'image/jpeg; charset=binary',
       size: 1024576,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -544,7 +545,7 @@ describe('Upload Function app', () => {
     expect(finalizeResponse.status).toBe(200);
     const finalizeBody = FinalizeResponseSchema.parse(await finalizeResponse.json());
     expect(finalizeBody.contentType).toBe('image/jpeg');
-    expect(storage.deletedKeys).toEqual([]);
+    expect(storage.deletedKeys).toHaveLength(1);
   });
 
   it('deletes and rejects uploaded objects when content type differs from the presign request', async () => {
@@ -555,8 +556,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    const { stagingObjectKey } = stagePresignedUpload(storage, presignBody, {
       contentType: 'image/png',
       size: 1024576,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -570,7 +570,7 @@ describe('Upload Function app', () => {
     expect(finalizeResponse.status).toBe(400);
     const body = ErrorResponseSchema.parse(await finalizeResponse.json());
     expect(body.error.code).toBe('content_type_mismatch');
-    expect(storage.deletedKeys).toEqual([objectKey]);
+    expect(storage.deletedKeys).toEqual([stagingObjectKey]);
   });
 
   it('rejects finalize for a mismatched trusted auction-house context', async () => {
@@ -581,8 +581,7 @@ describe('Upload Function app', () => {
       body: JSON.stringify(validPresignBody()),
     });
     const presignBody = PresignResponseSchema.parse(await presignResponse.json());
-    const objectKey = parseObjectKey(presignBody.objectKey);
-    storage.metadataByKey.set(objectKey, {
+    stagePresignedUpload(storage, presignBody, {
       contentType: 'image/jpeg',
       size: 1024576,
       updatedAt: new Date('2026-05-08T12:30:00.000Z'),
@@ -626,7 +625,7 @@ describe('Upload Function app', () => {
   });
 
   it('cancels an upload session', async () => {
-    const { app } = createTestApp();
+    const { app, storage } = createTestApp();
     const presignResponse = await app.request('/v1/uploads/presign', {
       method: 'POST',
       headers: jsonHeaders(),
@@ -639,6 +638,12 @@ describe('Upload Function app', () => {
       headers: jsonHeaders(),
     });
     expect(deleteResponse.status).toBe(204);
+    expect(storage.deletedKeys).toEqual([
+      buildStagingObjectKey(
+        parseUploadId(presignBody.uploadId),
+        parseObjectKey(presignBody.objectKey),
+      ),
+    ]);
 
     const finalizeResponse = await app.request(`/v1/uploads/${presignBody.uploadId}/finalize`, {
       method: 'POST',
@@ -922,6 +927,20 @@ const jsonHeaders = (extraHeaders: HeadersInit = {}): HeadersInit => ({
   ...extraHeaders,
 });
 
+const stagePresignedUpload = (
+  storage: FakeUploadStorage,
+  presignBody: { readonly uploadId: string; readonly objectKey: string },
+  metadata: ObjectMetadata,
+): {
+  readonly objectKey: ObjectKey;
+  readonly stagingObjectKey: StorageObjectKey;
+} => {
+  const objectKey = parseObjectKey(presignBody.objectKey);
+  const stagingObjectKey = buildStagingObjectKey(parseUploadId(presignBody.uploadId), objectKey);
+  storage.metadataByKey.set(stagingObjectKey, metadata);
+  return { objectKey, stagingObjectKey };
+};
+
 class FakeReplicationStorage implements ReplicationStorage {
   public readonly putByKey = new Map<string, ReplicationPutInput>();
 
@@ -969,9 +988,9 @@ class FakeReplicationStorage implements ReplicationStorage {
 }
 
 class FakeUploadStorage implements UploadStorage {
-  public readonly metadataByKey = new Map<ObjectKey, ObjectMetadata>();
+  public readonly metadataByKey = new Map<StorageObjectKey, ObjectMetadata>();
 
-  public readonly deletedKeys: ObjectKey[] = [];
+  public readonly deletedKeys: StorageObjectKey[] = [];
 
   public metadataError: UploadFunctionError | undefined = undefined;
 
@@ -982,25 +1001,26 @@ class FakeUploadStorage implements UploadStorage {
     });
   }
 
-  public deleteObject(objectKey: ObjectKey): Promise<void> {
+  public deleteObject(objectKey: StorageObjectKey): Promise<void> {
     this.deletedKeys.push(objectKey);
     this.metadataByKey.delete(objectKey);
+    this.bytesByKey.delete(objectKey);
     return Promise.resolve();
   }
 
-  public getObjectMetadata(objectKey: ObjectKey): Promise<ObjectMetadata | undefined> {
+  public getObjectMetadata(objectKey: StorageObjectKey): Promise<ObjectMetadata | undefined> {
     if (this.metadataError !== undefined) {
       return Promise.reject(this.metadataError);
     }
     return Promise.resolve(this.metadataByKey.get(objectKey));
   }
 
-  public getObjectStream(objectKey: ObjectKey): Promise<Readable> {
+  public getObjectStream(objectKey: StorageObjectKey): Promise<Readable> {
     const bytes = this.bytesByKey.get(objectKey) ?? Buffer.from('fake-bytes');
     return Promise.resolve(Readable.from(bytes));
   }
 
-  public readonly bytesByKey = new Map<ObjectKey, Buffer>();
+  public readonly bytesByKey = new Map<StorageObjectKey, Buffer>();
 
   public readonly tombstones = new Map<ObjectKey, Tombstone>();
 
@@ -1012,6 +1032,23 @@ class FakeUploadStorage implements UploadStorage {
 
   public tombstoneExists(objectKey: ObjectKey): Promise<boolean> {
     return Promise.resolve(this.tombstones.has(objectKey));
+  }
+
+  public async promoteObject(input: PromoteObjectInput): Promise<void> {
+    const metadata = this.metadataByKey.get(input.sourceObjectKey);
+    if (metadata !== undefined) {
+      this.metadataByKey.set(input.destinationObjectKey, {
+        ...metadata,
+        contentType: input.contentType,
+      });
+    }
+
+    const bytes = this.bytesByKey.get(input.sourceObjectKey);
+    if (bytes !== undefined) {
+      this.bytesByKey.set(input.destinationObjectKey, bytes);
+    }
+
+    await this.deleteObject(input.sourceObjectKey);
   }
 
   public async writeObject(input: WriteObjectInput): Promise<WriteObjectResult> {

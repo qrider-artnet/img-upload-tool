@@ -7,6 +7,7 @@ This root creates:
 - a private GCS bucket for canonical image originals
 - CORS on that bucket for browser direct uploads to signed URLs
 - a lifecycle rule that deletes `tombstones/` markers after 7 days
+- a lifecycle rule that deletes abandoned `staging/uploads/` direct-upload objects after 5 days
 - an Upload Function runtime service account
 - bucket IAM for object read/write/delete and bucket health checks
 - self `iam.serviceAccountTokenCreator` on the runtime service account so it can create V4 GCS signed URLs without a downloaded key

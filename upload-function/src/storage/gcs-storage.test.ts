@@ -1,10 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { parseObjectKey } from '../object-key.js';
+import { buildStagingObjectKey, parseUploadId } from '../upload-session-store.js';
 import { buildTombstonePath } from './upload-storage.js';
 import { createGcsUploadStorage } from './gcs-storage.js';
 
 interface MockFile {
+  readonly copy: ReturnType<
+    typeof vi.fn<
+      (
+        destination: MockFile,
+        options: {
+          readonly contentType: string;
+          readonly metadata: { readonly contentType: string };
+        },
+      ) => Promise<[MockFile, unknown]>
+    >
+  >;
   readonly delete: ReturnType<typeof vi.fn<() => Promise<void>>>;
   readonly exists: ReturnType<typeof vi.fn<() => Promise<[boolean]>>>;
   readonly save: ReturnType<
@@ -27,6 +39,17 @@ const gcsMock = vi.hoisted(() => {
     }
 
     const file: MockFile = {
+      copy: vi
+        .fn<
+          (
+            destination: MockFile,
+            options: {
+              readonly contentType: string;
+              readonly metadata: { readonly contentType: string };
+            },
+          ) => Promise<[MockFile, unknown]>
+        >()
+        .mockImplementation((destination) => Promise.resolve([destination, {}])),
       delete: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
       exists: vi.fn<() => Promise<[boolean]>>().mockResolvedValue([false]),
       save: vi
@@ -87,6 +110,27 @@ describe('GcsUploadStorage delete and tombstones', () => {
     await storage.deleteObject(objectKey);
 
     expect(file.delete).toHaveBeenCalledOnce();
+  });
+
+  it('promotes staged objects to canonical keys and deletes the staged object', async () => {
+    const storage = createGcsUploadStorage({ bucketName: 'mock-bucket' });
+    const stagedKey = buildStagingObjectKey(parseUploadId('01ARZ3NDEKTSV4RRFFQ69G5FAV'), objectKey);
+    const source = gcsMock.getFile(stagedKey);
+    const destination = gcsMock.getFile(objectKey);
+
+    await storage.promoteObject({
+      sourceObjectKey: stagedKey,
+      destinationObjectKey: objectKey,
+      contentType: 'image/jpeg',
+    });
+
+    expect(source.copy).toHaveBeenCalledWith(destination, {
+      contentType: 'image/jpeg',
+      metadata: {
+        contentType: 'image/jpeg',
+      },
+    });
+    expect(source.delete).toHaveBeenCalledOnce();
   });
 
   it('retries transient tombstone write failures', async () => {

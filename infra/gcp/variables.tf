@@ -50,6 +50,12 @@ variable "tombstone_retention_days" {
   default     = 7
 }
 
+variable "staging_upload_retention_days" {
+  description = "Number of days to retain abandoned direct-upload objects under staging/uploads/ before GCS lifecycle deletion."
+  type        = number
+  default     = 5
+}
+
 variable "runtime_service_account_id" {
   description = "Service account ID used by the Upload Function runtime."
   type        = string
