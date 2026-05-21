@@ -213,10 +213,7 @@ Behavior:
 
 1. Validate trusted gateway context (§2.5). Validate request body. Compute `objectKey` per §2.6.
 2. Generate ULID `uploadId`.
-3. Store the upload session record. **Implementation choice:** since the Function is database-free, sessions go in either:
-   - **Memorystore (Redis)** — clean, intentional, but adds a managed service.
-   - **In-process memory** — simpler, but Function instance restarts lose sessions. At this scale and with min-instances=1 + 15-minute TTL, acceptable.
-   - Default to **in-process memory** for v1; revisit if instance churn causes user-facing failures.
+3. Store the upload session record in Redis using `uploadId` as the lookup key and a TTL equal to the signed URL lifetime. The record contains the computed `objectKey`, product/auction context, expected content type and length, and `expiresAt`. Local development may omit Redis and use an in-process fallback, but horizontally scaled deployments must provide Redis. See ADR `docs/decisions/0003-redis-upload-sessions.md`.
 4. Generate a v4 signed PUT URL for GCS valid 15 minutes. Use `@google-cloud/storage`'s `getSignedUrl({ version: 'v4', action: 'write', ... })`.
 5. Return the upload session.
 
@@ -315,7 +312,7 @@ The Function does not delete the source S3 object after ingest. The vendor pipel
 
 #### 2.3.5 `GET /v1/health`
 
-Returns 200 if the Function can reach GCS, the configured S3 source, and R2. Used by uptime monitoring.
+Returns 200 if the Function can reach GCS, the configured S3 source, R2, and the upload session store. In deployed environments the session store is Redis; in local development it may be the in-process fallback. Used by uptime monitoring.
 
 #### 2.3.6 `DELETE /v1/objects/<objectKey>`
 
@@ -550,6 +547,27 @@ tombstones/<objectKey>.json
 **Reconciler contract:** before backfilling R2 from GCS (§4.3 step 3), the reconciler **must** check `tombstones/<objectKey>.json`. If it exists, skip the copy. This is the only mechanism that prevents the reconciler from re-creating a deleted R2 object.
 
 The ADR `docs/decisions/0001-deletion-tombstones.md` records the alternatives considered and trade-offs accepted.
+
+### 2.13 Reference examples
+
+`upload-function/examples/` contains compile-checked reference snippets for applications that call the Upload Function directly. These examples are not a production gateway and do not replace the upstream authorization boundary in §2.5; they show how internal callers should shape requests, consume responses, and persist returned metadata in their own systems.
+
+Files:
+
+- `upload-client.ts` — low-level `fetch` helpers for presign, finalize, S3 ingest, and finalized-object deletion.
+- `use-cases.ts` — higher-level reference helpers for common caller workflows.
+- `use-cases.md` — copyable snippets that demonstrate the same workflows with expected integration points.
+
+Covered use cases:
+
+- Auction lot direct upload.
+- Gallery artwork direct upload.
+- PDB artwork direct upload.
+- Vendor S3 ingest.
+- Finalized image deletion.
+- Rendering public original and variant URLs from the returned `publicUrl`.
+
+`npm run examples:build` validates the examples in isolation. `npm run check` for `upload-function/` also typechecks the examples so snippets do not drift from the API contracts.
 
 ---
 
@@ -787,7 +805,9 @@ Shadow DOM with scoped CSS. CSS custom properties for theming:
 
 ### 6.1 Purpose
 
-A real, deployable Vite app that exercises the Upload Function end-to-end. Demonstrates both ingestion modes plus the SQL writes that production callers would do. Becomes the canonical reference implementation forever — when someone asks "how do I integrate the Upload Function from <my context>?", the answer is "look at the harness."
+A real, deployable Vite app that exercises the Upload Function end-to-end. Demonstrates both ingestion modes plus the SQL writes that production callers would do. It is the canonical runnable reference implementation for the full system.
+
+Lightweight, per-use-case snippets live in `upload-function/examples/` (§2.13). When someone asks "how do I integrate the Upload Function from <my context>?", start with the examples for request/response shape and use the harness for the complete browser + backend + SQL flow.
 
 ### 6.2 Tech stack
 
@@ -1031,15 +1051,14 @@ Each alert links to a runbook in **TBD: Confluence space or GitHub repo**. At mi
 
 `**TBD:**` items consolidated:
 
-1. **Upload session storage** (§2.3.1). In-process memory vs. Memorystore Redis. Default in-memory.
-2. **VPC attachment for the Function** (§2.2). Useful for future maintenance; not required.
-3. **Vendor S3 bucket name and region** (§2.4). Confirm with scraper team; mirror in mock R2 bucket name.
-4. **Legacy `i`/`o` resolution mapping** (§3.5). Validate against actual size distributions.
-5. **Full-bucket reconciliation cadence** (§4.3).
-6. **Mock S3 listing implementation** (§6.5). Direct from Vite vs. backend endpoint.
-7. **Vendor S3 layout convention** (§6.6). Mirror in mock seed data.
-8. **Logging/metrics destination** (§7.1, §7.2). Cloud Monitoring native vs. Datadog.
-9. **Runbook location** (§7.4).
+1. **VPC attachment for the Function** (§2.2). Useful for future maintenance; not required.
+2. **Vendor S3 bucket name and region** (§2.4). Confirm with scraper team; mirror in mock R2 bucket name.
+3. **Legacy `i`/`o` resolution mapping** (§3.5). Validate against actual size distributions.
+4. **Full-bucket reconciliation cadence** (§4.3).
+5. **Mock S3 listing implementation** (§6.5). Direct from Vite vs. backend endpoint.
+6. **Vendor S3 layout convention** (§6.6). Mirror in mock seed data.
+7. **Logging/metrics destination** (§7.1, §7.2). Cloud Monitoring native vs. Datadog.
+8. **Runbook location** (§7.4).
 
 ---
 
