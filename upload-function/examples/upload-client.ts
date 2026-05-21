@@ -53,6 +53,23 @@ export interface FinalizeResponse {
   readonly replicatedToR2: boolean;
 }
 
+export interface S3IngestRequest {
+  readonly sourceUri: string;
+  readonly objectKey: string;
+  readonly contentType?: AllowedContentType;
+}
+
+export interface S3IngestResponse {
+  readonly objectKey: string;
+  readonly publicUrl: string;
+  readonly size: number;
+  readonly sha256: string;
+  readonly contentType: AllowedContentType;
+  readonly sourceUri: string;
+  readonly uploadedAt: string;
+  readonly replicatedToR2: boolean;
+}
+
 export interface UploadFunctionClientOptions {
   readonly endpoint: string;
   readonly productHeader: ProductId;
@@ -133,6 +150,48 @@ export const finalizeUpload = async (
   return parseFinalizeResponse(await response.json());
 };
 
+/**
+ * Ingests an image that already exists in an allowlisted S3-compatible source bucket.
+ */
+export const ingestFromS3 = async (
+  endpoint: string,
+  request: S3IngestRequest,
+): Promise<S3IngestResponse> => {
+  const response = await fetch(`${trimTrailingSlash(endpoint)}/v1/ingest/from-s3`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(`S3 ingest failed: ${await response.text()}`);
+  }
+
+  return parseS3IngestResponse(await response.json());
+};
+
+/**
+ * Deletes a finalized object from GCS, R2 originals, and persisted R2 WebP variants.
+ */
+export const deleteFinalizedObject = async (
+  options: UploadFunctionClientOptions,
+  objectKey: string,
+): Promise<void> => {
+  const response = await fetch(
+    `${trimTrailingSlash(options.endpoint)}/v1/objects/${encodeURIComponent(objectKey)}`,
+    {
+      method: 'DELETE',
+      headers: buildTrustedHeaders(options),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Delete failed: ${await response.text()}`);
+  }
+};
+
 const buildJsonHeaders = (options: UploadFunctionClientOptions): Headers => {
   const headers = buildTrustedHeaders(options);
   headers.set('Content-Type', 'application/json');
@@ -178,6 +237,21 @@ const parseFinalizeResponse = (value: unknown): FinalizeResponse => {
     publicUrl: requireString(record.publicUrl, 'publicUrl'),
     size: requireNumber(record.size, 'size'),
     contentType: requireAllowedContentType(record.contentType),
+    uploadedAt: requireString(record.uploadedAt, 'uploadedAt'),
+    replicatedToR2: requireBoolean(record.replicatedToR2, 'replicatedToR2'),
+  };
+};
+
+const parseS3IngestResponse = (value: unknown): S3IngestResponse => {
+  const record = requireRecord(value, 'S3 ingest response');
+
+  return {
+    objectKey: requireString(record.objectKey, 'objectKey'),
+    publicUrl: requireString(record.publicUrl, 'publicUrl'),
+    size: requireNumber(record.size, 'size'),
+    sha256: requireString(record.sha256, 'sha256'),
+    contentType: requireAllowedContentType(record.contentType),
+    sourceUri: requireString(record.sourceUri, 'sourceUri'),
     uploadedAt: requireString(record.uploadedAt, 'uploadedAt'),
     replicatedToR2: requireBoolean(record.replicatedToR2, 'replicatedToR2'),
   };

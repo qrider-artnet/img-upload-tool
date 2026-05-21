@@ -22,6 +22,7 @@ These examples show how callers integrate with the Upload Function.
 - [server-direct-upload.ts](./server-direct-upload.ts) - runnable backend/server CLI using Node 22, `fetch`, and `node:crypto`.
 - [curl-direct-upload.md](./curl-direct-upload.md) - manual smoke-test flow with curl.
 - [s3-ingest.md](./s3-ingest.md) - single-call S3/R2 source ingest flow.
+- [use-cases.md](./use-cases.md) and [use-cases.ts](./use-cases.ts) - reference snippets for auction lots, gallery artworks, PDB artworks, S3 ingest, delete, and read URLs.
 
 ## Build Examples
 
