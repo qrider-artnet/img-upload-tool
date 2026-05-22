@@ -8,10 +8,11 @@ import { z } from 'zod';
 
 import { UploadFunctionError } from '../errors.js';
 import type { Tombstone } from '../schemas.js';
-import type { ObjectKey } from '../types.js';
+import type { ObjectKey, StorageObjectKey } from '../types.js';
 import {
   buildTombstonePath,
   type ObjectMetadata,
+  type PromoteObjectInput,
   type SignedUploadUrl,
   type SignedUploadUrlInput,
   type UploadStorage,
@@ -58,7 +59,7 @@ export const createGcsUploadStorage = (config: GcsUploadStorageConfig): UploadSt
       return { uploadUrl, contentLengthRange };
     },
 
-    deleteObject: async (objectKey: ObjectKey): Promise<void> => {
+    deleteObject: async (objectKey: StorageObjectKey): Promise<void> => {
       try {
         await retryTransient(async () => {
           await bucket.file(objectKey).delete();
@@ -78,7 +79,7 @@ export const createGcsUploadStorage = (config: GcsUploadStorageConfig): UploadSt
       }
     },
 
-    getObjectMetadata: async (objectKey: ObjectKey): Promise<ObjectMetadata | undefined> => {
+    getObjectMetadata: async (objectKey: StorageObjectKey): Promise<ObjectMetadata | undefined> => {
       try {
         const [metadata] = await bucket.file(objectKey).getMetadata();
         const parsed = GcsMetadataSchema.safeParse(metadata);
@@ -130,7 +131,7 @@ export const createGcsUploadStorage = (config: GcsUploadStorageConfig): UploadSt
       }
     },
 
-    getObjectStream: (objectKey: ObjectKey): Promise<Readable> => {
+    getObjectStream: (objectKey: StorageObjectKey): Promise<Readable> => {
       const stream = bucket.file(objectKey).createReadStream();
       return Promise.resolve(stream);
     },
@@ -143,6 +144,31 @@ export const createGcsUploadStorage = (config: GcsUploadStorageConfig): UploadSt
           code: 'storage_unavailable',
           status: 503,
           message: 'Configured GCS bucket is not reachable.',
+        });
+      }
+    },
+
+    promoteObject: async (input: PromoteObjectInput): Promise<void> => {
+      try {
+        await retryTransient(async () => {
+          await bucket.file(input.sourceObjectKey).copy(bucket.file(input.destinationObjectKey), {
+            contentType: input.contentType,
+            metadata: {
+              contentType: input.contentType,
+            },
+          });
+        });
+
+        await retryTransient(async () => {
+          await bucket.file(input.sourceObjectKey).delete();
+        });
+      } catch (err: unknown) {
+        const details = describeStorageError(err);
+        throw new UploadFunctionError({
+          code: 'storage_unavailable',
+          status: 503,
+          message: 'Unable to promote staged GCS object.',
+          ...(details === undefined ? {} : { details }),
         });
       }
     },

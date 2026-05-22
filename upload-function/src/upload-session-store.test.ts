@@ -4,6 +4,8 @@ import { UploadFunctionError } from './errors.js';
 import { parseObjectKey } from './object-key.js';
 import { RedisUploadSessionStore, type RedisSessionClient } from './redis-upload-session-store.js';
 import {
+  buildStagingObjectKey,
+  createUploadId,
   type CreateUploadSessionInput,
   InMemoryUploadSessionStore,
 } from './upload-session-store.js';
@@ -11,14 +13,7 @@ import {
 describe('InMemoryUploadSessionStore', () => {
   it('stores and retrieves a live session', async () => {
     const store = new InMemoryUploadSessionStore();
-    const session = await store.create({
-      auctionHouseId: '425939177',
-      contentLength: 123,
-      contentType: 'image/jpeg',
-      expiresAt: new Date('2026-05-08T10:15:00.000Z'),
-      objectKey: parseObjectKey('lot_images/425939177/20260310/638775/195.jpg'),
-      productId: 'artnet-auctions',
-    });
+    const session = await store.create(sessionInput());
 
     await expect(
       store.get(session.uploadId, new Date('2026-05-08T10:14:59.000Z')),
@@ -27,14 +22,7 @@ describe('InMemoryUploadSessionStore', () => {
 
   it('expires stale sessions on read', async () => {
     const store = new InMemoryUploadSessionStore();
-    const session = await store.create({
-      auctionHouseId: '425939177',
-      contentLength: 123,
-      contentType: 'image/jpeg',
-      expiresAt: new Date('2026-05-08T10:15:00.000Z'),
-      objectKey: parseObjectKey('lot_images/425939177/20260310/638775/195.jpg'),
-      productId: 'artnet-auctions',
-    });
+    const session = await store.create(sessionInput());
 
     await expect(store.get(session.uploadId, new Date('2026-05-08T10:15:00.000Z'))).resolves.toBe(
       undefined,
@@ -127,15 +115,23 @@ describe('RedisUploadSessionStore', () => {
 
 const sessionInput = (
   overrides: Partial<CreateUploadSessionInput> = {},
-): CreateUploadSessionInput => ({
-  auctionHouseId: '425939177',
-  contentLength: 123,
-  contentType: 'image/jpeg',
-  expiresAt: new Date('2026-05-08T10:15:00.000Z'),
-  objectKey: parseObjectKey('lot_images/425939177/20260310/638775/195.jpg'),
-  productId: 'artnet-auctions',
-  ...overrides,
-});
+): CreateUploadSessionInput => {
+  const uploadId = overrides.uploadId ?? createUploadId();
+  const objectKey =
+    overrides.objectKey ?? parseObjectKey('lot_images/425939177/20260310/638775/195.jpg');
+
+  return {
+    auctionHouseId: '425939177',
+    contentLength: 123,
+    contentType: 'image/jpeg',
+    expiresAt: new Date('2026-05-08T10:15:00.000Z'),
+    objectKey,
+    productId: 'artnet-auctions',
+    stagingObjectKey: buildStagingObjectKey(uploadId, objectKey),
+    uploadId,
+    ...overrides,
+  };
+};
 
 class FakeRedisSessionClient implements RedisSessionClient {
   public isOpen = false;

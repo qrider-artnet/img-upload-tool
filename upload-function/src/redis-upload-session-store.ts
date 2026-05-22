@@ -4,9 +4,8 @@ import { z } from 'zod';
 import { UploadFunctionError } from './errors.js';
 import { isProductId, parseObjectKey, type ProductId } from './object-key.js';
 import { AllowedContentTypeSchema } from './schemas.js';
-import type { UploadId } from './types.js';
+import type { StagingObjectKey, StorageObjectKey, UploadId } from './types.js';
 import {
-  createUploadId,
   parseUploadId,
   type CreateUploadSessionInput,
   type UploadSession,
@@ -14,12 +13,12 @@ import {
 } from './upload-session-store.js';
 
 const DEFAULT_KEY_PREFIX = 'upload-session:';
-const MAX_CREATE_ATTEMPTS = 5;
 
 const RedisUploadSessionSchema = z
   .object({
     uploadId: z.string().min(1),
     objectKey: z.string().min(1),
+    stagingObjectKey: z.string().min(1).optional(),
     productId: z.string().min(1),
     auctionHouseId: z.string().min(1).optional(),
     contentType: AllowedContentTypeSchema,
@@ -78,21 +77,17 @@ export class RedisUploadSessionStore implements UploadSessionStore {
   public async create(input: CreateUploadSessionInput): Promise<UploadSession> {
     await this.#connect();
     const expiresInSeconds = secondsUntil(input.expiresAt, new Date());
+    const session: UploadSession = { ...input };
+    const result = await this.#runRedisOperation(
+      async () =>
+        await this.#client.set(this.#key(input.uploadId), serializeSession(session), {
+          EX: expiresInSeconds,
+          NX: true,
+        }),
+    );
 
-    for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
-      const uploadId = createUploadId();
-      const session: UploadSession = { uploadId, ...input };
-      const result = await this.#runRedisOperation(
-        async () =>
-          await this.#client.set(this.#key(uploadId), serializeSession(session), {
-            EX: expiresInSeconds,
-            NX: true,
-          }),
-      );
-
-      if (result === 'OK') {
-        return session;
-      }
+    if (result === 'OK') {
+      return session;
     }
 
     throw new UploadFunctionError({
@@ -166,6 +161,7 @@ const serializeSession = (session: UploadSession): string =>
   JSON.stringify({
     uploadId: session.uploadId,
     objectKey: session.objectKey,
+    stagingObjectKey: session.stagingObjectKey,
     productId: session.productId,
     ...(session.auctionHouseId === undefined ? {} : { auctionHouseId: session.auctionHouseId }),
     contentType: session.contentType,
@@ -198,11 +194,16 @@ const parseStoredSession = (raw: string): UploadSession => {
 
   const uploadId = parseUploadId(parsed.data.uploadId);
   const objectKey = parseObjectKey(parsed.data.objectKey);
+  const stagingObjectKey =
+    parsed.data.stagingObjectKey === undefined
+      ? objectKey
+      : parseStagingObjectKey(parsed.data.stagingObjectKey);
   const productId = parseProductId(parsed.data.productId);
 
   return {
     uploadId,
     objectKey,
+    stagingObjectKey,
     productId,
     ...(parsed.data.auctionHouseId === undefined
       ? {}
@@ -211,6 +212,18 @@ const parseStoredSession = (raw: string): UploadSession => {
     contentLength: parsed.data.contentLength,
     expiresAt: new Date(parsed.data.expiresAt),
   };
+};
+
+const parseStagingObjectKey = (value: string): StorageObjectKey => {
+  if (value.startsWith('staging/uploads/')) {
+    return value as StagingObjectKey;
+  }
+
+  throw new UploadFunctionError({
+    code: 'session_store_unavailable',
+    status: 503,
+    message: 'Upload session record has an invalid staging object key.',
+  });
 };
 
 const parseProductId = (value: string): ProductId => {

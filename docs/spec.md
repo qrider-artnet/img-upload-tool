@@ -213,9 +213,10 @@ Behavior:
 
 1. Validate trusted gateway context (§2.5). Validate request body. Compute `objectKey` per §2.6.
 2. Generate ULID `uploadId`.
-3. Store the upload session record in Redis using `uploadId` as the lookup key and a TTL equal to the signed URL lifetime. The record contains the computed `objectKey`, product/auction context, expected content type and length, and `expiresAt`. Local development may omit Redis and use an in-process fallback, but horizontally scaled deployments must provide Redis. See ADR `docs/decisions/0003-redis-upload-sessions.md`.
-4. Generate a v4 signed PUT URL for GCS valid 15 minutes. Use `@google-cloud/storage`'s `getSignedUrl({ version: 'v4', action: 'write', ... })`.
-5. Return the upload session.
+3. Compute a private staging key: `staging/uploads/<uploadId>/<objectKey>`. This is where the signed URL writes bytes before finalize.
+4. Store the upload session record in Redis using `uploadId` as the lookup key and a TTL equal to the signed URL lifetime. The record contains the computed `objectKey`, staging key, product/auction context, expected content type and length, and `expiresAt`. Local development may omit Redis and use an in-process fallback, but horizontally scaled deployments must provide Redis. See ADR `docs/decisions/0003-redis-upload-sessions.md`.
+5. Generate a v4 signed PUT URL for GCS valid 15 minutes, scoped to the staging key. Use `@google-cloud/storage`'s `getSignedUrl({ version: 'v4', action: 'write', ... })`.
+6. Return the upload session.
 
 #### 2.3.2 `POST /v1/uploads/:uploadId/finalize`
 
@@ -241,14 +242,15 @@ The response includes everything a caller needs to write its own DB row. Callers
 Behavior:
 
 1. Look up the session. If missing or expired → `404 upload_session_not_found`.
-2. HEAD the GCS object. If missing → `409 upload_not_received`.
+2. HEAD the staged GCS object. If missing → `409 upload_not_received`.
 3. Verify size matches session value → `400 size_mismatch` on mismatch.
 4. Verify stored content type matches the presign request when GCS reports a content type.
 5. Do not compute or return a direct-upload checksum. The signed URL, exact content-length constraint, content-type check, and GCS transport integrity are sufficient for v1.
-6. Return `publicUrl` as a cache-versioned path: `/_v/<uploadId>/<objectKey>`. The canonical storage key remains `objectKey`; the version exists only in the public URL/cache key.
-7. Replicate to R2 (§2.9). Best-effort: log on failure, set `replicatedToR2: false`, but do not fail the finalize.
-8. Delete the upload session record.
-9. Return success with all metadata.
+6. Copy/promote the staged object to the canonical `objectKey`, then delete the staged object.
+7. Return `publicUrl` as a cache-versioned path: `/_v/<uploadId>/<objectKey>`. The canonical storage key remains `objectKey`; the version exists only in the public URL/cache key.
+8. Replicate the canonical object to R2 (§2.9). Best-effort: log on failure, set `replicatedToR2: false`, but do not fail the finalize.
+9. Delete the upload session record.
+10. Return success with all metadata.
 
 If R2 replication fails, the response still returns 200 with `replicatedToR2: false`. The caller can decide whether to surface this to the user; the reconciliation function will repair it later.
 
@@ -257,6 +259,14 @@ If R2 replication fails, the response still returns 200 with `replicatedToR2: fa
 Cancel an in-flight upload.
 
 **Response (204):** no body.
+
+Behavior:
+
+1. Look up the upload session. If present, enforce the trusted product/auction context.
+2. Delete the staged GCS object. 404 is treated as success.
+3. Delete the upload session record.
+
+If the client abandons the upload without calling cancel or finalize, the Redis session expires after the signed URL TTL and GCS lifecycle deletes `staging/uploads/` objects after **5 days**.
 
 #### 2.3.4 `POST /v1/ingest/from-s3`
 
@@ -458,7 +468,8 @@ Rules:
 - All path segments URL-safe (`^[A-Za-z0-9_-]+$`).
 - `imageId` is a string — preserve leading zeros.
 - Extension derived from `contentType` (lowercase): `image/jpeg` → `.jpg`, `image/png` → `.png`, `image/webp` → `.webp`.
-- Same key in GCS and R2.
+- Same canonical key in GCS and R2 after finalize or S3 ingest.
+- Direct-upload signed URLs write first to `staging/uploads/<uploadId>/<objectKey>`. Only finalize promotes that staged object to the canonical key.
 - Legacy `<id>i.jpg`/`<id>o.jpg` are NOT stored; generated on-demand by the Variant Worker (§3).
 
 ### 2.7 No database integration

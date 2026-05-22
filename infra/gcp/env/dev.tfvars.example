@@ -32,6 +32,9 @@ cors_allowed_origins = [
 # Public image URL returned by finalize responses in the lower environment.
 public_base_url = "https://artworks.artnet-dev.com"
 
+staging_upload_retention_days = 5
+tombstone_retention_days      = 7
+
 # Upload Function API CORS response origin. Use the concrete lower-env UI origin
 # rather than * once the calling app domain is settled.
 cors_allow_origin = "https://artnet-dev.com"
