@@ -93,7 +93,10 @@ export const createUploadFunctionApp = (
     const uploadError = toUploadFunctionError(err);
 
     log.warn({
-      eventCode: 'upload_function.request_failed',
+      eventCode:
+        uploadError.code === 'session_store_unavailable'
+          ? 'session_store_unavailable'
+          : 'upload_function.request_failed',
       requestId,
       errorCode: uploadError.code,
       status: uploadError.status,

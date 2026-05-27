@@ -18,7 +18,7 @@ Implemented:
 - S3 ingest from an allowlisted S3-compatible source bucket (spec §2.3.4)
 - deletion tombstones (spec §2.12)
 - browser CORS/preflight handling
-- Redis-backed upload sessions, with in-memory fallback when `REDIS_URL` is absent
+- Redis-backed upload sessions, with an explicit in-memory fallback for tests/local-without-Docker
 - runnable browser and server examples
 
 Not implemented yet:
@@ -106,15 +106,15 @@ It records:
 
 During finalize, the function looks up the session, checks that the staged GCS object exists, verifies its size and content type, promotes it to the canonical key, returns metadata, and deletes the session.
 
-The production implementation stores sessions in Redis when `REDIS_URL` is configured. Each session is written under `REDIS_KEY_PREFIX + uploadId` with a TTL matching the signed URL expiry. This lets presign and finalize land on different Cloud Run instances.
+The production implementation stores sessions in Redis through `ioredis`. Each session is written under `REDIS_KEY_PREFIX + uploadId` with a TTL matching the signed URL expiry. This lets presign and finalize land on different Cloud Run instances.
 
-If `REDIS_URL` is absent, the function falls back to the in-memory store for local development. In-memory sessions are lost if the process restarts and are not safe for horizontally scaled deployments.
+Set `SESSION_STORE=redis` for normal local and deployed runs. Use `SESSION_STORE=memory` only for tests or local development without Docker. In-memory sessions are lost if the process restarts and are not safe for horizontally scaled deployments.
 
 The in-memory fallback also enforces a soft capacity ceiling (default `10_000` sessions). When the ceiling is reached, expired sessions are swept first; if the store is still full, new presigns are rejected with `503 too_many_sessions`.
 
 ## Cloud Run Deployment
 
-Production Cloud Run deployments should configure `REDIS_URL` so session state is shared across instances. With Redis enabled, Cloud Run can scale horizontally and the spec's `--max-instances=10` setting is compatible with direct uploads.
+Production Cloud Run deployments should configure `SESSION_STORE=redis` and `REDIS_URL` so session state is shared across instances. With Redis enabled, Cloud Run can scale horizontally and the spec's `--max-instances=10` setting is compatible with direct uploads.
 
 Only local/dev deployments that intentionally omit Redis should cap the function to one instance:
 
@@ -123,7 +123,7 @@ Only local/dev deployments that intentionally omit Redis should cap the function
 --max-instances=1
 ```
 
-The function does not create or manage the Redis cluster. It expects the deployment environment to provide a reachable Redis URL, including TLS/auth details if required.
+The function does not create or manage the Redis cluster. It expects the deployment environment to provide a reachable Redis URL, including TLS/auth details if required. In GCP lower/prod environments this points at Memorystore through a Serverless VPC Connector.
 
 ## Gateway Boundary
 
@@ -164,6 +164,12 @@ Install dependencies:
 npm install
 ```
 
+Start local Redis for the normal dev path:
+
+```bash
+docker compose up -d
+```
+
 Create local environment:
 
 ```bash
@@ -186,7 +192,8 @@ S3_SOURCE_REGION=auto
 S3_SOURCE_ACCESS_KEY_ID=<your-source-access-key-id>
 S3_SOURCE_SECRET_ACCESS_KEY=<your-source-secret-access-key>
 S3_SOURCE_ALLOWED_BUCKETS=artnet-vendor-feed
-REDIS_URL=redis://<host>:6379
+SESSION_STORE=redis
+REDIS_URL=redis://127.0.0.1:6379
 REDIS_KEY_PREFIX=upload-session:
 ```
 
@@ -207,7 +214,8 @@ The direct-upload examples require a real dev GCS bucket because they upload to 
 | `R2_ACCESS_KEY_ID`            | yes      | R2 access key used by the S3-compatible client. Provided via Secret Manager in production. |
 | `R2_SECRET_ACCESS_KEY`        | yes      | R2 secret access key. Provided via Secret Manager in production.                           |
 | `R2_REPLICATION_RETRIES`      | no       | Additional retry attempts after the first PUT/DELETE failure. Defaults to `3`.             |
-| `REDIS_URL`                   | no       | Redis connection URL for shared upload sessions. Required for horizontal scaling.          |
+| `SESSION_STORE`               | no       | `redis` or `memory`. Defaults to `redis` outside tests and `memory` under Vitest.          |
+| `REDIS_URL`                   | yes      | Redis connection URL for shared upload sessions when `SESSION_STORE=redis`.                |
 | `REDIS_KEY_PREFIX`            | no       | Redis key prefix for upload sessions. Defaults to `upload-session:`.                       |
 | `S3_SOURCE_ENDPOINT`          | yes      | S3-compatible endpoint for source ingest (R2 mock or AWS S3).                              |
 | `S3_SOURCE_REGION`            | yes      | Source S3 region. Use `auto` for R2.                                                       |

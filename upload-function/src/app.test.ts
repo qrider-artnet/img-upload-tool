@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createUploadFunctionApp } from './app.js';
 import { UploadFunctionError } from './errors.js';
@@ -29,6 +29,8 @@ import {
   buildStagingObjectKey,
   InMemoryUploadSessionStore,
   parseUploadId,
+  type UploadSession,
+  type UploadSessionStore,
 } from './upload-session-store.js';
 import { buildAllWebpVariantKeys, buildAllWebpVariantPrefixes } from './variant-keys.js';
 
@@ -90,6 +92,36 @@ describe('Upload Function app', () => {
     expect(response.status).toBe(403);
     const body = ErrorResponseSchema.parse(await response.json());
     expect(body.error.code).toBe('auction_house_required');
+  });
+
+  it('surfaces session store failures as 503 and logs the stable event code', async () => {
+    const warningLogs: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation((message: unknown) => {
+      if (typeof message === 'string') {
+        warningLogs.push(message);
+      }
+    });
+    const { app } = createTestApp({ uploadSessionStore: new FailingUploadSessionStore() });
+
+    try {
+      const response = await app.request('/v1/uploads/presign', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify(validPresignBody()),
+      });
+
+      expect(response.status).toBe(503);
+      const body = ErrorResponseSchema.parse(await response.json());
+      expect(body.error.code).toBe('session_store_unavailable');
+      const rawLog = warningLogs[0];
+      if (typeof rawLog !== 'string') {
+        throw new Error('Expected structured warning log payload.');
+      }
+      const logPayload: unknown = JSON.parse(rawLog);
+      expect(logPayload).toMatchObject({ eventCode: 'session_store_unavailable' });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('rejects finalize when the trusted auction-house header is missing', async () => {
@@ -868,7 +900,7 @@ describe('Upload Function app', () => {
   });
 });
 
-const createTestApp = () => {
+const createTestApp = (overrides: { readonly uploadSessionStore?: UploadSessionStore } = {}) => {
   const storage = new FakeUploadStorage();
   const replication = new FakeReplicationStorage();
   const sourceStorage = new FakeSourceStorage();
@@ -878,11 +910,36 @@ const createTestApp = () => {
     storage,
     replication,
     sourceStorage,
-    uploadSessionStore: new InMemoryUploadSessionStore(),
+    uploadSessionStore: overrides.uploadSessionStore ?? new InMemoryUploadSessionStore(),
   });
 
   return { app, storage, replication, sourceStorage };
 };
+
+class FailingUploadSessionStore implements UploadSessionStore {
+  public create(): Promise<UploadSession> {
+    return Promise.reject(sessionStoreUnavailableError());
+  }
+
+  public delete(): Promise<void> {
+    return Promise.reject(sessionStoreUnavailableError());
+  }
+
+  public get(): Promise<UploadSession | undefined> {
+    return Promise.reject(sessionStoreUnavailableError());
+  }
+
+  public healthCheck(): Promise<void> {
+    return Promise.reject(sessionStoreUnavailableError());
+  }
+}
+
+const sessionStoreUnavailableError = (): UploadFunctionError =>
+  new UploadFunctionError({
+    code: 'session_store_unavailable',
+    status: 503,
+    message: 'Upload session store is unavailable.',
+  });
 
 const validPresignBody = () => ({
   kind: 'auction-lot',

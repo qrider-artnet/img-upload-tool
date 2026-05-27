@@ -46,6 +46,7 @@ output "upload_function_environment" {
     S3_SOURCE_ENDPOINT        = var.s3_source_endpoint
     S3_SOURCE_REGION          = var.s3_source_region
     S3_SOURCE_ALLOWED_BUCKETS = join(",", var.s3_source_allowed_buckets)
+    SESSION_STORE             = "redis"
     REDIS_KEY_PREFIX          = var.redis_key_prefix
   }
 }
