@@ -1,4 +1,4 @@
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import { z } from 'zod';
 
 import { UploadFunctionError } from './errors.js';
@@ -28,8 +28,9 @@ const RedisUploadSessionSchema = z
   .strict();
 
 export interface RedisSessionClient {
-  readonly isOpen: boolean;
+  readonly status: string;
   connect(): Promise<unknown>;
+  disconnect(): void;
   del(key: string): Promise<number>;
   get(key: string): Promise<string | null>;
   on(event: 'error', listener: (err: Error) => void): unknown;
@@ -37,11 +38,10 @@ export interface RedisSessionClient {
   set(
     key: string,
     value: string,
-    options: {
-      readonly EX: number;
-      readonly NX: true;
-    },
-  ): Promise<string | null>;
+    secondsMode: 'EX',
+    seconds: number,
+    condition: 'NX',
+  ): Promise<'OK' | null>;
 }
 
 export interface RedisUploadSessionStoreConfig {
@@ -51,9 +51,13 @@ export interface RedisUploadSessionStoreConfig {
 
 export const createRedisUploadSessionStore = (
   config: RedisUploadSessionStoreConfig,
-): UploadSessionStore => {
-  const client: RedisSessionClient = createClient({ url: config.redisUrl });
-  client.on?.('error', () => {
+): RedisUploadSessionStore => {
+  const client: RedisSessionClient = new Redis(config.redisUrl, {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+  });
+  client.on('error', () => {
     // Connection failures are surfaced through the operation that observed them.
   });
   return new RedisUploadSessionStore({
@@ -80,10 +84,13 @@ export class RedisUploadSessionStore implements UploadSessionStore {
     const session: UploadSession = { ...input };
     const result = await this.#runRedisOperation(
       async () =>
-        await this.#client.set(this.#key(input.uploadId), serializeSession(session), {
-          EX: expiresInSeconds,
-          NX: true,
-        }),
+        await this.#client.set(
+          this.#key(input.uploadId),
+          serializeSession(session),
+          'EX',
+          expiresInSeconds,
+          'NX',
+        ),
     );
 
     if (result === 'OK') {
@@ -126,8 +133,12 @@ export class RedisUploadSessionStore implements UploadSessionStore {
     await this.#runRedisOperation(async () => await this.#client.ping());
   }
 
+  public disconnect(): void {
+    this.#client.disconnect();
+  }
+
   async #connect(): Promise<void> {
-    if (this.#client.isOpen) {
+    if (this.#client.status === 'ready') {
       return;
     }
 

@@ -1,15 +1,14 @@
-# Artnet Image Upload Tool — Engineering Spec (v3)
+# Artnet Image Upload Tool — Engineering Spec (v5)
 
 **Audience:** Claude (or another LLM coding agent), to be handed this document as context for implementation.
-**Status:** Draft v3 (replaces v2)
+**Status:** Draft v5
 **Replaces:** `LotImageParser.exe` and the legacy `.asp`/`.aspx` image handlers on the `p-image` Windows VM.
 
-### What changed from v2
+### Version changelog
 
-1. **Upload Function is now a pure storage service.** It does not write to SQL. It accepts images (via presigned upload OR via a new S3 ingest endpoint) and returns the canonical path. Callers are responsible for any database writes.
-2. **New `POST /v1/ingest/from-s3` endpoint.** Server-side fetch from an S3-compatible source bucket and replication to GCS + R2. Designed for the vendor scraper pipeline, demo-able against a mock R2 bucket today and swappable to real AWS S3 later.
-3. **Test Harness is now a documented deliverable.** A small Vite app with two tabs: direct upload and S3 ingest. Demonstrates both flows end-to-end, including the SQL writes that production callers would do. Real, deployable, maintainable as the reference implementation forever.
-4. **Reconciliation simplified.** The "DB orphans" pass disappears since the Upload Function no longer owns DB rows. Reconciliation is now purely GCS↔R2 drift correction.
+- **v5:** Redis-backed session store; in-memory retained as test-only fallback.
+- **v4:** Direct-upload signed URLs write to private staging keys before finalize promotes them to canonical storage.
+- **v3:** Upload Function is a pure storage service; added `POST /v1/ingest/from-s3`; Test Harness became a documented deliverable; Reconciliation simplified to GCS↔R2 drift correction.
 
 ### Why these changes
 
@@ -214,7 +213,7 @@ Behavior:
 1. Validate trusted gateway context (§2.5). Validate request body. Compute `objectKey` per §2.6.
 2. Generate ULID `uploadId`.
 3. Compute a private staging key: `staging/uploads/<uploadId>/<objectKey>`. This is where the signed URL writes bytes before finalize.
-4. Store the upload session record in Redis using `uploadId` as the lookup key and a TTL equal to the signed URL lifetime. The record contains the computed `objectKey`, staging key, product/auction context, expected content type and length, and `expiresAt`. Local development may omit Redis and use an in-process fallback, but horizontally scaled deployments must provide Redis. See ADR `docs/decisions/0003-redis-upload-sessions.md`.
+4. Store the upload session record in Redis using `uploadId` as the lookup key and a TTL equal to the signed URL lifetime. The record contains the computed `objectKey`, staging key, product/auction context, expected content type and length, and `expiresAt`. The in-memory store remains available for tests and local development without Docker via `SESSION_STORE=memory`; deployed environments use Redis. See ADR `docs/decisions/0003-redis-upload-sessions.md`.
 5. Generate a v4 signed PUT URL for GCS valid 15 minutes, scoped to the staging key. Use `@google-cloud/storage`'s `getSignedUrl({ version: 'v4', action: 'write', ... })`.
 6. Return the upload session.
 
