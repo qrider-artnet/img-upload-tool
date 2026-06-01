@@ -1,10 +1,24 @@
 name = "artnet-variant-worker-dev"
 main = "src/index.ts"
 compatibility_date = "2026-05-15"
+account_id = "72f5428c5d2205041884a7880fc7b990"
 
 [[r2_buckets]]
 binding = "R2_PRIMARY"
 bucket_name = "artnet-dev-image-upload-originals"
 
 [images]
+binding = "IMAGES"
+
+# QA environment. Deploy with: wrangler deploy --env qa
+# Binds the same R2 bucket the Upload Function replicates into for QA (see
+# infra/gcp/env/qa.tfvars r2_bucket).
+[env.qa]
+name = "artnet-variant-worker-qa"
+
+[[env.qa.r2_buckets]]
+binding = "R2_PRIMARY"
+bucket_name = "artwork-images"
+
+[env.qa.images]
 binding = "IMAGES"
