@@ -16,6 +16,12 @@ binding = "IMAGES"
 [env.qa]
 name = "artnet-variant-worker-qa"
 
+# Public artwork hostname (custom domain). Cloudflare creates the DNS record and
+# cert in the artnet-dev.com zone on deploy.
+[[env.qa.routes]]
+pattern       = "artworks.artnet-dev.com"
+custom_domain = true
+
 [[env.qa.r2_buckets]]
 binding = "R2_PRIMARY"
 bucket_name = "artwork-images"
