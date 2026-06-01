@@ -102,10 +102,16 @@ npm run check
 npm run test
 npm run build
 npm run examples:server
+npm run deploy            # deploy to the dev Cloud Run environment (gcloud, requires auth)
 ```
 
 The direct upload flow uses signed GCS URLs, so browser and server examples require a real
 development GCS bucket.
+
+`npm run deploy` reads runtime config from the `infra/gcp` Terraform outputs and deploys the
+function to Cloud Run, so the GCP infrastructure must be applied and the Secret Manager secret
+versions populated first (see `infra/gcp/README.md`). Pass an environment name with
+`npm run deploy -- <env>` (defaults to `dev`).
 
 ### Variant Worker
 

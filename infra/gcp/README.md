@@ -98,3 +98,14 @@ REDIS_KEY_PREFIX
 When deploying the function, wire `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `S3_SOURCE_ACCESS_KEY_ID`, `S3_SOURCE_SECRET_ACCESS_KEY`, and `REDIS_URL` from the Secret Manager secrets created by this root.
 
 The runtime service account output should be used as the function service account.
+
+## Deploying the function
+
+Terraform deliberately does not create the Cloud Run Function (the VPC attachment in spec §2.2 is still TBD, and the function image is built from application source, not Terraform). The function is deployed from the `upload-function` component, which reads these Terraform outputs as its single source of truth:
+
+```bash
+cd ../../upload-function
+npm run deploy            # defaults to the dev environment
+```
+
+`npm run deploy` requires this root to be applied and the secret versions above to exist. It deploys with `--no-allow-unauthenticated` by default, matching spec §2.5 (authentication happens upstream at the API gateway; the service requires an IAM invoker). See `upload-function/scripts/deploy.sh` for the runtime parameters and override variables.
