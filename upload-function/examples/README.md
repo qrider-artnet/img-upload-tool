@@ -57,7 +57,7 @@ The CLI accepts either flags or environment variables.
 ```bash
 npm run examples:server -- \
   --endpoint http://localhost:8080 \
-  --file ./sample.jpg \
+  --file ./examples/artworks/robert-mapplethorpe-rose-photographs-zoom_550_560.jpg \
   --content-type image/jpeg \
   --auction-house-id 425939177 \
   --auction-date 20260310 \
@@ -69,7 +69,7 @@ Equivalent environment variables:
 
 ```bash
 UPLOAD_FUNCTION_ENDPOINT=http://localhost:8080 \
-UPLOAD_FILE=./sample.jpg \
+UPLOAD_FILE=./examples/artworks/robert-mapplethorpe-rose-photographs-zoom_550_560.jpg \
 UPLOAD_CONTENT_TYPE=image/jpeg \
 UPLOAD_AUCTION_HOUSE_ID=425939177 \
 UPLOAD_AUCTION_DATE=20260310 \

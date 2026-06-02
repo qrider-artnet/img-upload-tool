@@ -9,7 +9,7 @@ Run it:
 ```bash
 npm run examples:server -- \
   --endpoint http://localhost:8080 \
-  --file ./sample.jpg \
+  --file ./examples/artworks/robert-mapplethorpe-rose-photographs-zoom_550_560.jpg \
   --content-type image/jpeg \
   --auction-house-id 425939177 \
   --auction-date 20260310 \
