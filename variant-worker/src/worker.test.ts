@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type {
+  CacheLike,
   Env,
   ImageOutputOptions,
   ImagesBindingLike,
@@ -191,11 +192,105 @@ describe('Variant Worker', () => {
     expect(invalidQuery.status).toBe(400);
     expect(await readErrorCode(invalidQuery)).toBe('invalid_variant');
   });
+
+  it('reports a MISS served from R2 when no edge cache is wired', async () => {
+    const env = createEnv();
+    env.R2_PRIMARY.objects.set(OBJECT_KEY, createR2Object('original-bytes'));
+
+    const response = await handleRequest(new Request(`https://artworks.test/${OBJECT_KEY}`), env);
+
+    expect(response.headers.get('x-cache')).toBe('MISS');
+    expect(response.headers.get('x-cache-source')).toBe('r2');
+  });
+
+  it('reports X-Cache-Source images for a freshly generated variant', async () => {
+    const env = createEnv();
+    env.R2_PRIMARY.objects.set(OBJECT_KEY, createR2Object('original-bytes'));
+
+    const response = await handleRequest(
+      new Request(`https://artworks.test/${OBJECT_KEY}?variant=w640`),
+      env,
+    );
+
+    expect(response.headers.get('x-cache')).toBe('MISS');
+    expect(response.headers.get('x-cache-source')).toBe('images');
+  });
+
+  it('reports X-Cache-Source r2 for a persisted variant', async () => {
+    const env = createEnv();
+    env.R2_PRIMARY.objects.set(VARIANT_KEY, createR2Object('stored-webp'));
+    env.R2_PRIMARY.objects.set(OBJECT_KEY, createR2Object('original-bytes'));
+
+    const response = await handleRequest(
+      new Request(`https://artworks.test/${OBJECT_KEY}?variant=w640`),
+      env,
+    );
+
+    expect(response.headers.get('x-cache')).toBe('MISS');
+    expect(response.headers.get('x-cache-source')).toBe('r2');
+  });
+
+  it('stores a MISS in the edge cache and serves a HIT on the next request', async () => {
+    const env = createEnv();
+    env.R2_PRIMARY.objects.set(
+      OBJECT_KEY,
+      createR2Object('original-bytes', { httpMetadata: { contentType: 'image/jpeg' } }),
+    );
+    const cache = new FakeCache();
+    const url = `https://artworks.test/${OBJECT_KEY}`;
+
+    const first = await handleRequest(new Request(url), env, cache);
+    expect(first.headers.get('x-cache')).toBe('MISS');
+    expect(first.headers.get('x-cache-source')).toBe('r2');
+    expect(cache.puts).toEqual([url]);
+
+    const second = await handleRequest(new Request(url), env, cache);
+    expect(second.headers.get('x-cache')).toBe('HIT');
+    expect(second.headers.get('x-cache-source')).toBe('edge');
+    expect(second.headers.get('content-type')).toBe('image/jpeg');
+    expect(second.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(await second.text()).toBe('original-bytes');
+  });
+
+  it('serves a generated variant from the edge cache without transforming again', async () => {
+    const env = createEnv();
+    env.R2_PRIMARY.objects.set(OBJECT_KEY, createR2Object('original-bytes'));
+    const cache = new FakeCache();
+    const url = `https://artworks.test/${OBJECT_KEY}?variant=w640`;
+
+    const first = await handleRequest(new Request(url), env, cache);
+    expect(first.headers.get('x-cache')).toBe('MISS');
+    expect(first.headers.get('x-cache-source')).toBe('images');
+    expect(env.IMAGES.transforms).toHaveLength(1);
+
+    const second = await handleRequest(new Request(url), env, cache);
+    expect(second.headers.get('x-cache')).toBe('HIT');
+    expect(second.headers.get('x-cache-source')).toBe('edge');
+    expect(second.headers.get('content-type')).toBe('image/webp');
+    // Served from the edge — no second transform.
+    expect(env.IMAGES.transforms).toHaveLength(1);
+  });
 });
 
 interface FakeEnv extends Env {
   readonly R2_PRIMARY: FakeR2Bucket;
   readonly IMAGES: FakeImagesBinding;
+}
+
+class FakeCache implements CacheLike {
+  public readonly store = new Map<string, Response>();
+
+  public readonly puts: string[] = [];
+
+  public match(request: Request): Promise<Response | undefined> {
+    const cached = this.store.get(request.url);
+    return Promise.resolve(cached === undefined ? undefined : cached.clone());
+  }
+
+  public put(request: Request, response: Response): void {
+    this.puts.push(request.url);
+    this.store.set(request.url, response);
+  }
 }
 
 const createEnv = (): FakeEnv => ({

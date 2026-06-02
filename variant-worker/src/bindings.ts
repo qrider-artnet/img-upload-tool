@@ -52,3 +52,15 @@ export interface Env {
   readonly R2_PRIMARY: R2BucketLike;
   readonly IMAGES: ImagesBindingLike;
 }
+
+/**
+ * Minimal edge-cache seam over the Workers Cache API (`caches.default`).
+ *
+ * Abstracted like R2BucketLike / ImagesBindingLike so the worker stays testable
+ * without the Workers runtime: the real entry (index.ts) wires `caches.default`
+ * and `ctx.waitUntil`; tests inject a fake.
+ */
+export interface CacheLike {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void> | void;
+}

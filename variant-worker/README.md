@@ -48,3 +48,15 @@ Generated variants are stored as:
 variants/webp/<variant>/<objectKey-with-webp-extension>
 variants/webp/<variant>/<objectKey-without-extension>/_v/<cacheVersion>.webp
 ```
+
+## Caching and cache-status headers
+
+An edge cache layer (Workers Cache API, `caches.default`) sits in front of the R2 logic;
+responses are keyed by request URL, which is safe because versioned URLs are immutable. Every
+image response carries:
+
+- `X-Cache: HIT | MISS` — whether the edge cache served it.
+- `X-Cache-Source: edge | r2 | images` — bytes came from the edge cache, a persisted R2
+  object/variant, or a fresh Images transform.
+
+See ADR `docs/decisions/0004-edge-cache-and-cache-status.md`.
