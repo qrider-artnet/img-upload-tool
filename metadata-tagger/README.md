@@ -75,14 +75,24 @@ WebP carries XMP/EXIF but not legacy IPTC IIM. The artwork fields are XMP and
 embed fine; for the photograph the XMP forms (`XMP-dc` / `XMP-plus`) are what
 survive in WebP.
 
+## Privacy strip (default on)
+
+While embedding, the tagger also **strips GPS location and device serial
+numbers** (`GPS:all`, EXIF/XMP GPS, `*SerialNumber`). This is on by default so
+the stored original carries no location/device data. Opt out with the library
+option `stripPrivacy: false` or the CLI flag `--keep-privacy`. Capture date is
+**not** stripped — it is part of the photograph attribution layer.
+
 ## Surviving delivery (Cloudflare)
 
 Embedding only gets metadata into the original. **Cloudflare Images strips
 metadata by default** during the variant transform, so the Variant Worker sets
 `metadata: 'keep'` on its transform to preserve attribution to the delivered
-image. Caveat: `keep` also preserves GPS/device EXIF — embed attribution on
-originals that don't carry private location data, or switch the Worker to
-`copyright` (which keeps only copyright, dropping the artwork cataloging fields).
+image. `keep` also preserves GPS/device EXIF — which is safe here precisely
+*because* the tagger removes those fields by default (Cloudflare's three modes
+can't keep cataloging while dropping GPS; the field-level decision lives
+upstream, in this tool). If you upload with `--keep-privacy`, switch the Worker
+to `copyright` or accept the leak.
 
 ## Tests
 

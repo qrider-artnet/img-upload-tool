@@ -10,11 +10,11 @@ const WEBP_CONTENT_TYPE = 'image/webp';
 const DEFAULT_ORIGINAL_CONTENT_TYPE = 'application/octet-stream';
 
 // Preserve embedded IPTC/XMP (artwork cataloging + photographer attribution)
-// through the transform. Cloudflare Images strips metadata by default. Trade-off:
-// 'keep' also preserves GPS/device data, so originals must not carry private EXIF
-// (the metadata-tagger embeds attribution and should strip privacy fields).
-// Use 'copyright' instead to preserve only copyright at the cost of the artwork
-// cataloging fields. See docs/decisions/0004 and the metadata-tagger README.
+// through the transform. Cloudflare Images strips metadata by default. 'keep'
+// also preserves GPS/device data, which is safe because the metadata-tagger
+// strips GPS + device serials by default at embed time, so stored originals
+// carry no private EXIF. Use 'copyright' instead to preserve only copyright (at
+// the cost of the artwork cataloging fields). See the metadata-tagger README.
 const VARIANT_METADATA: 'keep' | 'copyright' | 'none' = 'keep';
 
 // Edge cache observability headers (see docs/spec.md §3.4 and ADR 0004).

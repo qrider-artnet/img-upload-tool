@@ -15,6 +15,8 @@ export interface TagAndUploadInput {
   readonly presignFields: Record<string, unknown>;
   /** Trusted gateway headers (X-Artnet-Product-Id, etc.). */
   readonly gatewayHeaders: Record<string, string>;
+  /** Strip GPS + device serials while embedding. Default true. */
+  readonly stripPrivacy?: boolean;
 }
 
 export interface TagAndUploadResult {
@@ -30,7 +32,9 @@ export interface TagAndUploadResult {
  * called with the tagged byte length (the signed PUT pins exact content length).
  */
 export const tagAndUpload = async (input: TagAndUploadInput): Promise<TagAndUploadResult> => {
-  const embedded = await embed(input.image, input.metadata);
+  const embedded = await embed(input.image, input.metadata, {
+    stripPrivacy: input.stripPrivacy ?? true,
+  });
   const contentType = embedded.format === 'webp' ? 'image/webp' : 'image/jpeg';
 
   const presign = asObject(

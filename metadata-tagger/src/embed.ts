@@ -14,12 +14,23 @@ export interface VerificationResult {
   readonly missing: readonly string[];
 }
 
+export interface EmbedOptions {
+  /**
+   * Strip GPS + device serial numbers while embedding (default true), so the
+   * stored original carries no location/device data and the Variant Worker's
+   * `metadata: keep` is safe. Set false to leave existing metadata untouched.
+   */
+  readonly stripPrivacy?: boolean;
+}
+
 export interface EmbedResult {
   readonly bytes: Buffer;
   readonly format: ImageFormat;
   /** Read-back of the tagged file (`exiftool -json -G -struct`). */
   readonly tags: Record<string, unknown>;
   readonly verification: VerificationResult;
+  /** Whether the privacy strip (GPS + device serials) was applied. */
+  readonly privacyStripped: boolean;
 }
 
 /** Detects JPEG / WebP from magic bytes; throws for anything else. */
@@ -41,16 +52,27 @@ export const detectFormat = (bytes: Buffer): ImageFormat => {
  * Embeds the metadata into the image bytes via exiftool and returns the tagged
  * bytes plus a read-back verification. Requires the exiftool binary.
  */
-export const embed = async (input: Buffer, doc: MetadataDocument): Promise<EmbedResult> => {
+export const embed = async (
+  input: Buffer,
+  doc: MetadataDocument,
+  options: EmbedOptions = {},
+): Promise<EmbedResult> => {
+  const stripPrivacy = options.stripPrivacy ?? true;
   const format = detectFormat(input);
   const dir = await mkdtemp(join(tmpdir(), 'metadata-tagger-'));
   const workPath = join(dir, `image.${format}`);
   try {
     await writeFile(workPath, input);
-    await applyMetadata(workPath, buildExiftoolJson(doc));
+    await applyMetadata(workPath, buildExiftoolJson(doc), { stripPrivacy });
     const tags = await readTags(workPath);
     const bytes = await readFile(workPath);
-    return { bytes, format, tags, verification: verifyEmbedded(doc, tags) };
+    return {
+      bytes,
+      format,
+      tags,
+      verification: verifyEmbedded(doc, tags),
+      privacyStripped: stripPrivacy,
+    };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
