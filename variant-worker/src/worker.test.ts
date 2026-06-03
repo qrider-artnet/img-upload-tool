@@ -100,7 +100,7 @@ describe('Variant Worker', () => {
     expect(response.headers.get('content-type')).toBe('image/webp');
     expect(await response.text()).toBe('webp:w640:original-bytes');
     expect(env.IMAGES.transforms).toEqual([{ width: 640, fit: 'scale-down' }]);
-    expect(env.IMAGES.outputs).toEqual([{ format: 'image/webp', quality: 82 }]);
+    expect(env.IMAGES.outputs).toEqual([{ format: 'image/webp', quality: 82, metadata: 'keep' }]);
     expect(env.R2_PRIMARY.puts).toEqual([
       {
         key: VARIANT_KEY,

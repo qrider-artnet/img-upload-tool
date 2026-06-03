@@ -46,6 +46,12 @@ export interface ImageTransformOptions {
 export interface ImageOutputOptions {
   readonly format: 'image/webp';
   readonly quality: number;
+  /**
+   * Metadata handling through the transform. Cloudflare Images strips all
+   * metadata by default ('none'); 'keep' preserves embedded IPTC/XMP (artwork
+   * cataloging + attribution); 'copyright' preserves only copyright fields.
+   */
+  readonly metadata?: 'keep' | 'copyright' | 'none';
 }
 
 export interface Env {

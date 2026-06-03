@@ -21,6 +21,10 @@ Implemented:
 - `tests/e2e/`: end-to-end suite (direct upload + health) run against a deployed
   environment; read-path tests are gated on a Cloudflare Access service token and
   S3 ingest is pending the mock vendor bucket.
+- `metadata-tagger/`: client-side library + CLI that embeds artwork-cataloging
+  and attribution metadata (IPTC Extension `AO*` + IPTC/dc/PLUS) into images
+  before upload; the Variant Worker preserves it through delivery via
+  `metadata: keep`.
 
 Not implemented yet:
 
@@ -224,6 +228,8 @@ X-Cache-Source: edge | r2 | images edge cache, persisted R2 object/variant, or f
 - [docs/design/test-harness-and-e2e.md](docs/design/test-harness-and-e2e.md):
   design proposal for the Test Harness and end-to-end test suite.
 - [tests/e2e/README.md](tests/e2e/README.md): how to run the end-to-end suite.
+- [metadata-tagger/README.md](metadata-tagger/README.md): artwork/photo metadata
+  embedding library + CLI.
 - [docs/talking-points.md](docs/talking-points.md): high-level talking points for
   presenting the project.
 - [upload-function/README.md](upload-function/README.md): Upload Function setup and API details.

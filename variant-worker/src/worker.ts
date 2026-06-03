@@ -9,6 +9,14 @@ const CACHE_VERSION_METADATA_KEY = 'cache-version';
 const WEBP_CONTENT_TYPE = 'image/webp';
 const DEFAULT_ORIGINAL_CONTENT_TYPE = 'application/octet-stream';
 
+// Preserve embedded IPTC/XMP (artwork cataloging + photographer attribution)
+// through the transform. Cloudflare Images strips metadata by default. Trade-off:
+// 'keep' also preserves GPS/device data, so originals must not carry private EXIF
+// (the metadata-tagger embeds attribution and should strip privacy fields).
+// Use 'copyright' instead to preserve only copyright at the cost of the artwork
+// cataloging fields. See docs/decisions/0004 and the metadata-tagger README.
+const VARIANT_METADATA: 'keep' | 'copyright' | 'none' = 'keep';
+
 // Edge cache observability headers (see docs/spec.md §3.4 and ADR 0004).
 // X-Cache: HIT | MISS — whether the Cache API (caches.default) served it.
 // X-Cache-Source: edge | r2 | images — where the bytes ultimately came from.
@@ -109,7 +117,7 @@ const serveVariant = async (
   const transformed = (
     await env.IMAGES.input(original.body)
       .transform(spec.transform)
-      .output({ format: WEBP_CONTENT_TYPE, quality: spec.quality })
+      .output({ format: WEBP_CONTENT_TYPE, quality: spec.quality, metadata: VARIANT_METADATA })
   ).response();
 
   if (transformed.body === null) {

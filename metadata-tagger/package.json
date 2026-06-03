@@ -1,0 +1,25 @@
+{
+  "name": "@artnet/metadata-tagger",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "metadata-tagger": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "npm run build && node dist/cli.js"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.16.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}
