@@ -14,7 +14,7 @@ Implemented:
 - `upload-function/`: Cloud Run Function for direct uploads, finalization, R2 replication,
   S3 ingest, Redis-backed upload sessions, deletion, and deletion tombstones.
 - `variant-worker/`: Cloudflare Worker that serves R2 originals and persists generated WebP
-  variants on first request.
+  variants on first request, fronted by an edge cache with `X-Cache` HIT/MISS headers.
 - `infra/gcp/`: Terraform for the GCS bucket, service account, IAM, CORS, tombstone lifecycle,
   and Secret Manager placeholders.
 - `infra/cloudflare/`: Terraform for the R2 bucket and optional Worker custom domain.
@@ -28,7 +28,7 @@ Not implemented yet:
 
 See [docs/spec.md](docs/spec.md) for the authoritative engineering spec,
 [docs/architecture.svg](docs/architecture.svg) for the system topology, and
-[docs/read-path-architecture.svg](docs/read-path-architecture.svg) for the image-serving flow.
+[docs/read-path-architecture.png](docs/read-path-architecture.png) for the image-serving flow.
 
 ## Architecture
 
@@ -46,7 +46,9 @@ Callers receive the canonical `objectKey` and `publicUrl` from the function, the
 database rows.
 
 The Variant Worker owns the read path. It serves originals from R2, generates a fixed set of WebP
-variants on demand, and writes generated variants back to R2 as deterministic cache artifacts.
+variants on demand, and writes generated variants back to R2 as deterministic cache artifacts. An
+edge cache layer (Workers Cache API) fronts R2, and every image response carries `X-Cache` and
+`X-Cache-Source` headers for HIT/MISS observability.
 
 GCS is the system of record for original images. R2 is the serving mirror.
 
@@ -56,7 +58,7 @@ GCS is the system of record for original images. R2 is the serving mirror.
 docs/
   spec.md                         Engineering spec and API contracts
   architecture.svg                System diagram
-  read-path-architecture.svg      Image request/read-path diagram
+  read-path-architecture.png      Image request/read-path diagram
   decisions/                      Accepted architectural decisions
 
 upload-function/                  Cloud Run Function, Node 22, TypeScript
@@ -131,7 +133,8 @@ npm run deploy
 ```
 
 The Worker requires an R2 binding named `R2_PRIMARY` and a Cloudflare Images binding named
-`IMAGES`.
+`IMAGES`. `npm run deploy` targets the default environment; deploy a named environment (e.g. the
+QA worker bound to its own R2 bucket and custom domain) with `npx wrangler deploy --env <name>`.
 
 ## Infrastructure
 
@@ -184,6 +187,13 @@ GET /_v/<cacheVersion>/lot_images/<auctionHouseId>/<auctionDate>/<lotId>/<imageI
 Supported generated variants are `thumb`, `w320`, `w640`, `w960`, `w1280`, and `w1600`.
 Compatibility aliases map `medium` to `w640` and `large` to `w1600`.
 
+Image responses include cache-status headers:
+
+```text
+X-Cache: HIT | MISS                whether the edge cache (caches.default) served the response
+X-Cache-Source: edge | r2 | images edge cache, persisted R2 object/variant, or fresh Images transform
+```
+
 ## Development Rules
 
 - Keep component boundaries intact. Components share contracts, not code.
@@ -199,12 +209,14 @@ Compatibility aliases map `medium` to `w640` and `large` to `w1600`.
 
 - [docs/spec.md](docs/spec.md): source of truth for behavior and contracts.
 - [docs/architecture.svg](docs/architecture.svg): system topology and write/read overview.
-- [docs/read-path-architecture.svg](docs/read-path-architecture.svg): image request read path.
+- [docs/read-path-architecture.png](docs/read-path-architecture.png): image request read path.
 - [docs/decisions/0001-deletion-tombstones.md](docs/decisions/0001-deletion-tombstones.md):
   delete/reconciliation tombstone contract.
 - [docs/decisions/0002-persist-generated-webp-variants.md](docs/decisions/0002-persist-generated-webp-variants.md):
   persisted WebP variant decision.
 - [docs/decisions/0003-redis-upload-sessions.md](docs/decisions/0003-redis-upload-sessions.md):
   shared Redis upload session storage.
+- [docs/decisions/0004-edge-cache-and-cache-status.md](docs/decisions/0004-edge-cache-and-cache-status.md):
+  Variant Worker edge cache layer and cache-status headers.
 - [upload-function/README.md](upload-function/README.md): Upload Function setup and API details.
 - [variant-worker/README.md](variant-worker/README.md): Worker commands, bindings, and URL contract.
