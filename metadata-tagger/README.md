@@ -77,6 +77,21 @@ const result = await tagAndUpload({
 `tagAndUpload` embeds first, then presigns with the **tagged** byte length (the
 signed PUT pins exact content length), PUTs the tagged bytes, and finalizes.
 
+## Tag server (browser bridge)
+
+Browsers can't run exiftool, so a small HTTP bridge lets the web upload example
+tag images: it embeds via this library and returns the tagged bytes, then the
+browser continues its own direct upload.
+
+```bash
+npm run serve   # POST /tag on http://localhost:8090 (needs exiftool)
+```
+
+`POST /tag` with `{ "imageBase64": "…", "metadata": { … }, "stripPrivacy": true }`
+returns `{ "imageBase64": "<tagged>", "format", "verification", "privacyStripped" }`.
+Configure the port/CORS with `TAG_SERVER_PORT` / `TAG_SERVER_ALLOW_ORIGIN`. It is
+a dev/demo tool, not production. See `upload-function/examples/browser-direct-upload.md`.
+
 ## WebP note
 
 WebP carries XMP/EXIF but not legacy IPTC IIM. The artwork fields are XMP and

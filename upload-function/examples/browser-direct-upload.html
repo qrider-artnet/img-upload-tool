@@ -51,6 +51,20 @@
         overflow: auto;
         white-space: pre-wrap;
       }
+
+      fieldset {
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        display: grid;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      legend {
+        font-size: 13px;
+        font-weight: 600;
+        padding: 0 6px;
+      }
     </style>
   </head>
   <body>
@@ -91,6 +105,40 @@
         Image variant suffix
         <input id="image-variant-suffix" placeholder="_1, _2, or blank for primary" />
       </label>
+
+      <fieldset>
+        <legend>Metadata tagging (optional — JPEG/WebP; needs the tag server running)</legend>
+
+        <label>
+          Tag server URL
+          <input id="tag-server" placeholder="http://localhost:8090 (blank = skip tagging)" />
+        </label>
+
+        <label>
+          Artwork title
+          <input id="art-title" placeholder="e.g. Churchgate Station" />
+        </label>
+
+        <label>
+          Artwork creator(s)
+          <input id="art-creator" placeholder="artist name(s), comma-separated" />
+        </label>
+
+        <label>
+          Artwork copyright
+          <input id="art-copyright" placeholder="the artwork's copyright" />
+        </label>
+
+        <label>
+          Photographer
+          <input id="photo-creator" placeholder="photographer name(s), comma-separated" />
+        </label>
+
+        <label>
+          Photo copyright
+          <input id="photo-copyright" placeholder="the photograph's copyright" />
+        </label>
+      </fieldset>
 
       <button type="submit">Upload</button>
     </form>
