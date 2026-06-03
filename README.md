@@ -218,5 +218,7 @@ X-Cache-Source: edge | r2 | images edge cache, persisted R2 object/variant, or f
   shared Redis upload session storage.
 - [docs/decisions/0004-edge-cache-and-cache-status.md](docs/decisions/0004-edge-cache-and-cache-status.md):
   Variant Worker edge cache layer and cache-status headers.
+- [docs/design/test-harness-and-e2e.md](docs/design/test-harness-and-e2e.md):
+  design proposal for the Test Harness and end-to-end test suite.
 - [upload-function/README.md](upload-function/README.md): Upload Function setup and API details.
 - [variant-worker/README.md](variant-worker/README.md): Worker commands, bindings, and URL contract.
