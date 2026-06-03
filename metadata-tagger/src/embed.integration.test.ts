@@ -1,8 +1,15 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { embed } from './embed.js';
-import { isExiftoolAvailable } from './exiftool.js';
+import { applyMetadata, isExiftoolAvailable, readTags } from './exiftool.js';
 import { parseMetadataDocument } from './schema.js';
+
+const hasGpsTags = (tags: Record<string, unknown>): boolean =>
+  Object.keys(tags).some((key) => /GPS(Latitude|Longitude|Position)/.test(key));
 
 // 1x1 JPEG fixture (160 bytes).
 const SAMPLE_JPEG = Buffer.from(
@@ -44,5 +51,45 @@ describeWithExiftool('embed (requires exiftool)', () => {
     expect(readBack).toContain('Churchgate Station');
     expect(readBack).toContain('Sebastião Salgado');
     expect(readBack).toContain('Studio Reproduction');
+  });
+
+  it('strips GPS and device serials present in the original (default strip)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'tagger-gps-'));
+    const seededPath = join(dir, 'with-gps.jpg');
+    try {
+      // Seed the fixture with GPS + a serial number, with the strip disabled.
+      await writeFile(seededPath, SAMPLE_JPEG);
+      await applyMetadata(
+        seededPath,
+        {
+          'GPS:GPSLatitude': 48.8584,
+          'GPS:GPSLatitudeRef': 'N',
+          'GPS:GPSLongitude': 2.2945,
+          'GPS:GPSLongitudeRef': 'E',
+          'EXIF:SerialNumber': 'CAM-SERIAL-12345',
+        },
+        { stripPrivacy: false },
+      );
+
+      // Sanity: the seed actually wrote GPS + serial, so the test is not vacuous.
+      const seededTags = await readTags(seededPath);
+      expect(hasGpsTags(seededTags)).toBe(true);
+      expect(JSON.stringify(seededTags)).toContain('CAM-SERIAL-12345');
+
+      // Embed with the default privacy strip — GPS + serial must be gone, while
+      // attribution is written.
+      const withGps = await readFile(seededPath);
+      const result = await embed(
+        withGps,
+        parseMetadataDocument({ photograph: { creator: ['Studio Reproduction'] } }),
+      );
+
+      expect(result.privacyStripped).toBe(true);
+      expect(hasGpsTags(result.tags)).toBe(false);
+      expect(JSON.stringify(result.tags)).not.toContain('CAM-SERIAL-12345');
+      expect(JSON.stringify(result.tags)).toContain('Studio Reproduction');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
