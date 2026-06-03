@@ -18,13 +18,16 @@ Implemented:
 - `infra/gcp/`: Terraform for the GCS bucket, service account, IAM, CORS, tombstone lifecycle,
   and Secret Manager placeholders.
 - `infra/cloudflare/`: Terraform for the R2 bucket and optional Worker custom domain.
+- `tests/e2e/`: end-to-end suite (direct upload + health) run against a deployed
+  environment; read-path tests are gated on a Cloudflare Access service token and
+  S3 ingest is pending the mock vendor bucket.
 
 Not implemented yet:
 
 - Upload Widget.
 - Test Harness.
 - Reconciliation Function.
-- Contract and end-to-end test suites.
+- Contract test suite.
 
 See [docs/spec.md](docs/spec.md) for the authoritative engineering spec,
 [docs/architecture.svg](docs/architecture.svg) for the system topology, and
@@ -220,5 +223,6 @@ X-Cache-Source: edge | r2 | images edge cache, persisted R2 object/variant, or f
   Variant Worker edge cache layer and cache-status headers.
 - [docs/design/test-harness-and-e2e.md](docs/design/test-harness-and-e2e.md):
   design proposal for the Test Harness and end-to-end test suite.
+- [tests/e2e/README.md](tests/e2e/README.md): how to run the end-to-end suite.
 - [upload-function/README.md](upload-function/README.md): Upload Function setup and API details.
 - [variant-worker/README.md](variant-worker/README.md): Worker commands, bindings, and URL contract.
