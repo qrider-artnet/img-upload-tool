@@ -224,5 +224,7 @@ X-Cache-Source: edge | r2 | images edge cache, persisted R2 object/variant, or f
 - [docs/design/test-harness-and-e2e.md](docs/design/test-harness-and-e2e.md):
   design proposal for the Test Harness and end-to-end test suite.
 - [tests/e2e/README.md](tests/e2e/README.md): how to run the end-to-end suite.
+- [docs/talking-points.md](docs/talking-points.md): high-level talking points for
+  presenting the project.
 - [upload-function/README.md](upload-function/README.md): Upload Function setup and API details.
 - [variant-worker/README.md](variant-worker/README.md): Worker commands, bindings, and URL contract.
