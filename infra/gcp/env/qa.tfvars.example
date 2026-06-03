@@ -1,0 +1,74 @@
+# QA lower-environment configuration.
+#
+# The function's resources live in the shared QA application project
+# (qa-artnetapps-7e9a), namespaced with an artnet-qa- prefix so they do not
+# collide with other apps in that project.
+#
+# Copy this file to qa.tfvars in this directory, then replace the placeholders:
+#
+#   cp infra/gcp/env/qa.tfvars.example infra/gcp/env/qa.tfvars
+#   terraform -chdir=infra/gcp plan -var-file=env/qa.tfvars
+#
+# Do not commit env/qa.tfvars. It may contain account-specific IDs.
+
+# Shared QA application project.
+project_id = "qa-artnetapps-7e9a"
+
+region          = "us-east4"
+bucket_location = "US-EAST4"
+
+# GCS bucket names are globally unique. If this name is already taken, keep the
+# artnet-qa prefix and add the GCP project ID or another stable suffix.
+bucket_name = "artnet-qa-image-upload-originals"
+
+# Keep false so Terraform cannot destroy a bucket that still contains image data.
+bucket_force_destroy = false
+
+# Browser origins allowed to PUT directly to signed GCS URLs.
+# TODO: confirm the real QA UI origins.
+cors_allowed_origins = [
+  "http://localhost:5173",
+  "http://localhost:8080",
+  "https://REPLACE_WITH_QA_APP_ORIGIN",
+]
+
+# Public image URL returned by finalize responses in QA.
+# TODO: confirm the real QA image host.
+public_base_url = "https://REPLACE_WITH_QA_IMAGE_HOST"
+
+staging_upload_retention_days = 5
+tombstone_retention_days      = 7
+
+# Upload Function API CORS response origin. Use the concrete QA UI origin
+# rather than * once the calling app domain is settled.
+cors_allow_origin = "https://REPLACE_WITH_QA_APP_ORIGIN"
+
+runtime_service_account_id           = "artnet-qa-upload-function"
+runtime_service_account_display_name = "Artnet QA Upload Function runtime"
+
+# Cloudflare R2 QA replication target. These are identifiers only, not secrets.
+# Store the access key values in Secret Manager after apply.
+r2_account_id = "REPLACE_WITH_CLOUDFLARE_ACCOUNT_ID"
+r2_bucket     = "artnet-qa-image-upload-originals"
+
+r2_access_key_id_secret_id     = "artnet-qa-r2-access-key-id"
+r2_secret_access_key_secret_id = "artnet-qa-r2-secret-access-key"
+
+# Mock vendor S3/R2 source used by POST /v1/ingest/from-s3.
+s3_source_endpoint        = "https://REPLACE_WITH_CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+s3_source_region          = "auto"
+s3_source_allowed_buckets = [
+  "artnet-mock-vendor-feed",
+]
+
+s3_source_access_key_id_secret_id     = "artnet-qa-s3-source-access-key-id"
+s3_source_secret_access_key_secret_id = "artnet-qa-s3-source-secret-access-key"
+
+redis_url_secret_id = "artnet-qa-redis-url"
+redis_key_prefix    = "upload-session:"
+
+labels = {
+  app         = "artnet-image-upload"
+  managed_by  = "terraform"
+  environment = "qa"
+}

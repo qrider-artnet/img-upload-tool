@@ -1,4 +1,4 @@
-import type { Env, R2ObjectBodyLike } from './bindings.js';
+import type { CacheLike, Env, R2ObjectBodyLike } from './bindings.js';
 import { VariantWorkerError, jsonError, toErrorResponse } from './errors.js';
 import type { ObjectKey } from './object-key.js';
 import { parseImageRequest } from './request.js';
@@ -9,19 +9,52 @@ const CACHE_VERSION_METADATA_KEY = 'cache-version';
 const WEBP_CONTENT_TYPE = 'image/webp';
 const DEFAULT_ORIGINAL_CONTENT_TYPE = 'application/octet-stream';
 
-export const handleRequest = async (request: Request, env: Env): Promise<Response> => {
+// Edge cache observability headers (see docs/spec.md §3.4 and ADR 0004).
+// X-Cache: HIT | MISS — whether the Cache API (caches.default) served it.
+// X-Cache-Source: edge | r2 | images — where the bytes ultimately came from.
+const CACHE_STATUS_HEADER = 'X-Cache';
+const CACHE_SOURCE_HEADER = 'X-Cache-Source';
+
+type CacheSource = 'edge' | 'r2' | 'images';
+
+interface ServeResult {
+  readonly response: Response;
+  readonly source: CacheSource;
+}
+
+export const handleRequest = async (
+  request: Request,
+  env: Env,
+  cache?: CacheLike,
+): Promise<Response> => {
   try {
     if (request.method !== 'GET') {
       return jsonError('invalid_request', 'Only GET is supported.', 405);
     }
 
-    const parsed = parseImageRequest(request);
-
-    if (parsed.variant === undefined) {
-      return await serveOriginal(env, parsed.objectKey, parsed.cacheVersion);
+    if (cache !== undefined) {
+      const cached = await cache.match(request);
+      if (cached !== undefined) {
+        return withCacheStatus(cached, 'HIT', 'edge');
+      }
     }
 
-    return await serveVariant(env, parsed.objectKey, parsed.variant, parsed.cacheVersion);
+    const parsed = parseImageRequest(request);
+    const result =
+      parsed.variant === undefined
+        ? await serveOriginal(env, parsed.objectKey, parsed.cacheVersion)
+        : await serveVariant(env, parsed.objectKey, parsed.variant, parsed.cacheVersion);
+
+    const response = withCacheStatus(result.response, 'MISS', result.source);
+
+    // Persist the freshly built response in the edge cache for next time. The
+    // real adapter defers the write via ctx.waitUntil, so this does not block
+    // the response. A clone is cached because the body stream is single-use.
+    if (cache !== undefined) {
+      await cache.put(request, response.clone());
+    }
+
+    return response;
   } catch (err: unknown) {
     return toErrorResponse(err);
   }
@@ -31,7 +64,7 @@ const serveOriginal = async (
   env: Env,
   objectKey: ObjectKey,
   cacheVersion: string | undefined,
-): Promise<Response> => {
+): Promise<ServeResult> => {
   const original = await env.R2_PRIMARY.get(objectKey);
 
   if (original === null) {
@@ -43,7 +76,10 @@ const serveOriginal = async (
   }
 
   enforceCacheVersion(original, cacheVersion);
-  return responseFromR2Object(original, original.httpMetadata?.contentType);
+  return {
+    response: responseFromR2Object(original, original.httpMetadata?.contentType),
+    source: 'r2',
+  };
 };
 
 const serveVariant = async (
@@ -51,12 +87,12 @@ const serveVariant = async (
   objectKey: ObjectKey,
   variant: WebpVariant,
   cacheVersion: string | undefined,
-): Promise<Response> => {
+): Promise<ServeResult> => {
   const variantKey = buildVariantKey(objectKey, variant, cacheVersion);
   const storedVariant = await env.R2_PRIMARY.get(variantKey);
 
   if (storedVariant !== null) {
-    return responseFromR2Object(storedVariant, WEBP_CONTENT_TYPE);
+    return { response: responseFromR2Object(storedVariant, WEBP_CONTENT_TYPE), source: 'r2' };
   }
 
   const original = await env.R2_PRIMARY.get(objectKey);
@@ -92,10 +128,10 @@ const serveVariant = async (
     },
   });
 
-  return new Response(responseBody, {
-    status: 200,
-    headers: variantHeaders(),
-  });
+  return {
+    response: new Response(responseBody, { status: 200, headers: variantHeaders() }),
+    source: 'images',
+  };
 };
 
 const responseFromR2Object = (
@@ -118,6 +154,22 @@ const variantHeaders = (): Headers =>
     'Content-Type': WEBP_CONTENT_TYPE,
     'Cache-Control': CACHE_CONTROL,
   });
+
+/**
+ * Returns a copy of `response` with the cache-status observability headers set.
+ * Rebuilding via `new Response` keeps it valid for responses read back from the
+ * edge cache, whose headers are otherwise immutable.
+ */
+const withCacheStatus = (
+  response: Response,
+  status: 'HIT' | 'MISS',
+  source: CacheSource,
+): Response => {
+  const result = new Response(response.body, response);
+  result.headers.set(CACHE_STATUS_HEADER, status);
+  result.headers.set(CACHE_SOURCE_HEADER, source);
+  return result;
+};
 
 const enforceCacheVersion = (
   original: R2ObjectBodyLike,

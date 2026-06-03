@@ -12,9 +12,9 @@
     "skipLibCheck": true,
     "esModuleInterop": false,
     "lib": ["ES2022", "DOM"],
-    "outDir": "dist",
-    "rootDir": "src",
-    "types": ["node", "vitest/globals"]
+    "types": ["node"],
+    "noEmit": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
 }

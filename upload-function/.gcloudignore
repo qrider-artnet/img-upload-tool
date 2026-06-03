@@ -1,0 +1,22 @@
+# Files excluded from the Cloud Run build context uploaded by `gcloud run deploy`.
+# Without this file, gcloud would upload everything in this directory (including
+# .env.* secret files and node_modules), because the repo-root .gitignore is not
+# visible when --source points at this subdirectory.
+
+# Never upload local env/secret files.
+.env
+.env.*
+!.env.example
+
+# Reinstalled / rebuilt by the GCP buildpack (see "gcp-build" in package.json).
+node_modules/
+dist/
+
+# Dev-only artifacts.
+coverage/
+*.tsbuildinfo
+src/**/*.test.ts
+examples/
+docker-compose.yml
+.git/
+.gitignore

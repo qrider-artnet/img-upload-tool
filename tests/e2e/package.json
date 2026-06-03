@@ -1,0 +1,16 @@
+{
+  "name": "@artnet/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run",
+    "test:watch": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}

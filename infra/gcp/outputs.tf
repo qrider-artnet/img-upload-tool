@@ -1,3 +1,8 @@
+output "project_id" {
+  description = "GCP project ID that owns the upload infrastructure. Used as the Cloud Run deploy target."
+  value       = var.project_id
+}
+
 output "gcs_bucket_name" {
   description = "Canonical image originals bucket name."
   value       = google_storage_bucket.image_originals.name

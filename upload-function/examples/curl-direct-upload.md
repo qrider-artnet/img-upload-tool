@@ -6,7 +6,7 @@ Set inputs:
 
 ```bash
 ENDPOINT="http://localhost:8080"
-FILE="./sample.jpg"
+FILE="./examples/artworks/robert-mapplethorpe-rose-photographs-zoom_550_560.jpg"
 CONTENT_TYPE="image/jpeg"
 CONTENT_LENGTH="$(wc -c < "$FILE" | tr -d ' ')"
 ```
