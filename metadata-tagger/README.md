@@ -13,6 +13,14 @@ at upload time via `tagAndUpload`.
   - Arch: `pacman -S perl-image-exiftool`
   - macOS: `brew install exiftool`
   - Debian/Ubuntu: `apt install libimage-exiftool-perl`
+  - No system package / no root (e.g. CI): exiftool is a self-contained Perl
+    script, so clone it and add it to PATH (needs `perl`):
+
+    ```bash
+    git clone --depth 1 https://github.com/exiftool/exiftool.git /tmp/exiftool
+    chmod +x /tmp/exiftool/exiftool
+    PATH="/tmp/exiftool:$PATH" npm test
+    ```
 
 Scope: **server-side callers** (S3-ingest prep, harness backend, scripts).
 Browser direct-upload tagging is deferred (browsers can't run exiftool).
